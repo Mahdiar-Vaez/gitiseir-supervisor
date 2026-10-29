@@ -252,3 +252,83 @@ export interface DayTripGridItem {
   canSetTemporaryDriver: boolean;
 }
 
+/**
+ * Company Service Location option
+ */
+export interface CompanyServiceLocation {
+  id: number;
+  title: string;
+  companyName?: string | null;
+  isActive?: boolean;
+}
+
+/**
+ * Single item inside Supervisor Daily Board
+ */
+export interface SupervisorDailyBoardItem {
+  calendarDayId?: string;
+  tripWorkCalendarId?: string;
+  tripId: number;
+  tripName: string;
+  driverId?: number | null;
+  driverFullName?: string | null;
+  driverTel?: string | null;
+  licensePlate?: string | null;
+  carType?: string | null;
+  carBodyColor?: string | null;
+  carModelYear?: number | null;
+  scheduledStartTime?: string | null;
+  scheduledEndTime?: string | null;
+  outbound?: TripLegInfo | null;
+  inbound?: TripLegInfo | null;
+  price?: number | null;
+  status: number;
+  statusDisplay?: string | null;
+  isAttendanceConfirmed?: boolean;
+  attendanceConfirmedAtUtc?: string | null;
+  attendanceNote?: string | null;
+  hasTemporaryDriver?: boolean;
+  temporaryDriver?: TemporaryDriverInfo | null;
+  canSetTemporaryDriver?: boolean;
+}
+
+/**
+ * Result returned by GET /api/SupervisorsMobile/Trip/daily-board
+ */
+export interface SupervisorDailyBoardResult {
+  companyServiceLocationId: number;
+  companyServiceLocationTitle: string;
+  entering: boolean;
+  directionTitle: string;
+  filterSource: string;
+  iranLocalTime: string;
+  totalCount: number;
+  scheduledCount: number;
+  startedCount: number;
+  completedCount: number;
+  items: SupervisorDailyBoardItem[];
+}
+
+/**
+ * Request body for POST /api/SupervisorsMobile/Trip/confirm-attendance
+ */
+export interface ConfirmAttendanceRequest {
+  calendarDayId: string;
+  note: string;
+}
+
+/**
+ * Request body for POST /api/SupervisorsMobile/Trip/assign-temporary-driver
+ */
+export interface AssignTemporaryDriverRequest {
+  calendarDayId: string;
+  name: string;
+  family: string;
+  phoneNumber: string;
+  nationalCode: string;
+  cardNumber: string;
+  reason: string;
+  price: number;
+}
+
+

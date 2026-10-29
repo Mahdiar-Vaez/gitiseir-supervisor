@@ -130,6 +130,7 @@ export const BorderRadius = {
   md: 12,
   lg: 18,
   xl: 24,
+  pill: 9999,
   full: 9999,
 } as const;
 

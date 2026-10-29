@@ -14,13 +14,15 @@ import { toPersianDigits } from '@/utils/persian-digits';
 import { getCurrentJalaliDate, JALALI_MONTH_NAMES } from '@/utils/jalali';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { ShamsiCalendar } from '@/components/ui/ShamsiCalendar';
-import { DayTripCard } from '@/components/ui/DayTripCard';
+import { DayTripsTable } from '@/components/ui/DayTripsTable';
 import { TripSummaryModal } from '@/components/ui/TripSummaryModal';
+import { ConfirmAttendanceModal } from '@/components/ui/ConfirmAttendanceModal';
+import { AssignTempDriverModal } from '@/components/ui/AssignTempDriverModal';
 import { WorkCalendarDay, DayTripGridItem } from '@/services/api/types';
 import { getWorkCalendarApi, getDayTripsGridApi } from '@/services/api/calendar';
 import { CalendarDays, Inbox } from 'lucide-react-native';
 
-export default function CalendarScreen() {
+export default function SupervisorCalendarScreen() {
   const { colors, isDark } = useAppTheme();
   const { token } = useAuth();
   const today = getCurrentJalaliDate();
@@ -39,8 +41,12 @@ export default function CalendarScreen() {
   const [refreshIndex, setRefreshIndex] = useState<number>(0);
 
   // 3. Modal state
-  const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
+  const [selectedGridTrip, setSelectedGridTrip] = useState<DayTripGridItem | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
+
+  // 4. Supervisor Action Modals
+  const [attendanceTrip, setAttendanceTrip] = useState<DayTripGridItem | null>(null);
+  const [tempDriverTrip, setTempDriverTrip] = useState<DayTripGridItem | null>(null);
 
   // Load monthly calendar days
   useEffect(() => {
@@ -53,7 +59,7 @@ export default function CalendarScreen() {
           setCalendarDays(res.result.days);
         }
       } catch (err) {
-        console.warn('Failed to load work calendar:', err);
+        console.log('Failed to load work calendar:', err);
       } finally {
         if (!isCancelled) {
           setLoadingCalendar(false);
@@ -80,7 +86,7 @@ export default function CalendarScreen() {
           setDayTrips(res.result);
         }
       } catch (err) {
-        console.warn('Failed to load day trips grid:', err);
+        console.log('Failed to load day trips grid:', err);
       } finally {
         if (!isCancelled) {
           setLoadingDayTrips(false);
@@ -103,7 +109,6 @@ export default function CalendarScreen() {
   const handleMonthChange = (year: number, month: number) => {
     setCurrentYear(year);
     setCurrentMonth(month);
-    // If navigated back to current month, select current day; otherwise select day 1
     if (year === today.year && month === today.month) {
       setSelectedDay(today.day);
     } else {
@@ -116,14 +121,14 @@ export default function CalendarScreen() {
     setLoadingDayTrips(true);
   };
 
-  const handleOpenTripModal = (tripId: number) => {
-    setSelectedTripId(tripId);
+  const handleSelectTripFromTable = (trip: DayTripGridItem) => {
+    setSelectedGridTrip(trip);
     setModalVisible(true);
   };
 
   const handleCloseModal = () => {
     setModalVisible(false);
-    setSelectedTripId(null);
+    setSelectedGridTrip(null);
   };
 
   const currentMonthName = JALALI_MONTH_NAMES[currentMonth - 1] || 'نامشخص';
@@ -133,7 +138,7 @@ export default function CalendarScreen() {
       <AppHeader />
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 24 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 32 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -170,7 +175,7 @@ export default function CalendarScreen() {
                 { color: colors.gold, fontFamily: Typography.fontFamily.bold },
               ]}
             >
-              {toPersianDigits(selectedDay)} {currentMonthName}
+              {toPersianDigits(selectedDay)} {currentMonthName} {toPersianDigits(currentYear)}
             </Text>
           </View>
 
@@ -182,7 +187,7 @@ export default function CalendarScreen() {
                   { color: colors.text, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                برنامه سفرهای این روز
+                مدیریت سفرهای این روز (سرشوفر)
               </Text>
               <Text
                 style={[
@@ -190,14 +195,14 @@ export default function CalendarScreen() {
                   { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                {toPersianDigits(dayTrips.length)} سرویس ثبت شده
+                {toPersianDigits(dayTrips.length)} سرویس ثبت شده — امکان ثبت حضور و تعیین لنگی
               </Text>
             </View>
             <View style={[styles.goldAccentBar, { backgroundColor: colors.gold }]} />
           </View>
         </View>
 
-        {/* 3. Trips List (High-Density / Clean / Scrollable) */}
+        {/* 3. Tabular Data-Grid View with Search & Supervisor Actions */}
         {loadingDayTrips ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator color={colors.gold} size="small" />
@@ -207,19 +212,17 @@ export default function CalendarScreen() {
                 { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
               ]}
             >
-              در حال دریافت سفرهای روز {toPersianDigits(selectedDay)} {currentMonthName}...
+              در حال دریافت جدول سفرهای روز {toPersianDigits(selectedDay)} {currentMonthName}...
             </Text>
           </View>
         ) : dayTrips.length > 0 ? (
-          <View style={styles.tripsList}>
-            {dayTrips.map((trip) => (
-              <DayTripCard
-                key={trip.tripWorkCalendarId || `${trip.tripId}-${trip.outbound?.start}`}
-                trip={trip}
-                onPress={handleOpenTripModal}
-              />
-            ))}
-          </View>
+          <DayTripsTable
+            trips={dayTrips}
+            onSelectTrip={handleSelectTripFromTable}
+            showSupervisorActions={true}
+            onConfirmAttendance={(trip) => setAttendanceTrip(trip)}
+            onAssignTempDriver={(trip) => setTempDriverTrip(trip)}
+          />
         ) : (
           /* Empty State */
           <View
@@ -253,7 +256,7 @@ export default function CalendarScreen() {
                 { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
               ]}
             >
-              روز استراحت یا عدم تخصیص سرویس در سامانه رانندگان گیتی‌سیر
+              در این تاریخ سرویسی در تقویم کاری ثبت نشده است
             </Text>
           </View>
         )}
@@ -262,34 +265,73 @@ export default function CalendarScreen() {
       {/* 4. Luxury Trip Summary Modal */}
       <TripSummaryModal
         visible={modalVisible}
-        tripId={selectedTripId}
-        initialTrip={(() => {
-          const matched = dayTrips.find((t) => t.tripId === selectedTripId);
-          if (!matched) return null;
-          return {
-            tripId: matched.tripId,
-            tripName: matched.tripName,
-            status: matched.status,
-            scheduledStartTime: matched.outbound?.start || matched.inbound?.start || '۰۰:۰۰',
-            scheduledEndTime: matched.outbound?.end || matched.inbound?.end || '۰۰:۰۰',
-            outboundStart: matched.outbound?.start,
-            outboundEnd: matched.outbound?.end,
-            outboundPrice: matched.outbound?.price || matched.inbound?.price || 0,
-            licensePlate: matched.licensePlate || undefined,
-            calendarDayId: matched.tripWorkCalendarId,
-            serviceLocationTitle: matched.tripName,
-            driverFullName: matched.driverFullName,
-            totalStations: 5,
-            visitedStations: matched.status === 3 ? 5 : 0,
-            startedAtUtc: null,
-            endedAtUtc: null,
-            isReplacementAssigned: false,
-            canStartTrip: false,
-            canEndTrip: false,
-          };
-        })()}
-        calendarDayId={dayTrips.find((t) => t.tripId === selectedTripId)?.tripWorkCalendarId || ''}
+        tripId={selectedGridTrip?.tripId ?? null}
+        initialTrip={
+          selectedGridTrip
+            ? {
+                tripId: selectedGridTrip.tripId,
+                tripName: selectedGridTrip.tripName,
+                status: selectedGridTrip.status,
+                scheduledStartTime:
+                  selectedGridTrip.outbound?.start ||
+                  selectedGridTrip.inbound?.start ||
+                  '۰۰:۰۰',
+                scheduledEndTime:
+                  selectedGridTrip.outbound?.end ||
+                  selectedGridTrip.inbound?.end ||
+                  '۰۰:۰۰',
+                outboundStart: selectedGridTrip.outbound?.start,
+                outboundEnd: selectedGridTrip.outbound?.end,
+                outboundPrice:
+                  selectedGridTrip.outbound?.price ||
+                  selectedGridTrip.inbound?.price ||
+                  0,
+                licensePlate: selectedGridTrip.licensePlate || undefined,
+                calendarDayId: selectedGridTrip.tripWorkCalendarId,
+                serviceLocationTitle: selectedGridTrip.tripName,
+                driverFullName: selectedGridTrip.driverFullName,
+                totalStations: 5,
+                visitedStations: selectedGridTrip.status === 3 ? 5 : 0,
+              }
+            : null
+        }
+        calendarDayId={selectedGridTrip?.tripWorkCalendarId || ''}
         onClose={handleCloseModal}
+      />
+
+      {/* 5. Supervisor Confirm Attendance Modal */}
+      <ConfirmAttendanceModal
+        visible={Boolean(attendanceTrip)}
+        calendarDayId={attendanceTrip?.tripWorkCalendarId ?? null}
+        tripId={attendanceTrip?.tripId}
+        tripName={attendanceTrip?.tripName}
+        driverName={attendanceTrip?.driverFullName}
+        tripTime={
+          attendanceTrip?.outbound?.start
+            ? `${attendanceTrip.outbound.start.slice(0, 5)} تا ${
+                attendanceTrip.outbound.end?.slice(0, 5) || ''
+              }`
+            : undefined
+        }
+        onClose={() => setAttendanceTrip(null)}
+        onSuccess={() => setRefreshIndex((prev) => prev + 1)}
+      />
+
+      {/* 6. Supervisor Assign Temporary Driver Modal */}
+      <AssignTempDriverModal
+        visible={Boolean(tempDriverTrip)}
+        calendarDayId={tempDriverTrip?.tripWorkCalendarId ?? null}
+        tripId={tempDriverTrip?.tripId}
+        tripName={tempDriverTrip?.tripName}
+        mainDriverName={tempDriverTrip?.driverFullName}
+        defaultPrice={
+          tempDriverTrip?.outbound?.price ??
+          tempDriverTrip?.inbound?.price ??
+          1000000
+        }
+        existingTempDriver={tempDriverTrip?.temporaryDriver}
+        onClose={() => setTempDriverTrip(null)}
+        onSuccess={() => setRefreshIndex((prev) => prev + 1)}
       />
     </View>
   );
@@ -351,9 +393,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 12,
-  },
-  tripsList: {
-    gap: 10,
   },
   emptyStateCard: {
     borderRadius: BorderRadius.lg,

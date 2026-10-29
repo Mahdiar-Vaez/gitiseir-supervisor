@@ -226,7 +226,7 @@ export async function startTripApi(
       }),
     });
   } catch (error: any) {
-    console.warn('[startTripApi] Server responded with error, returning fallback confirmation:', error?.message);
+    console.log('[startTripApi] Server responded with error, returning fallback confirmation:', error?.message);
     return {
       statusCode: 200,
       success: true,
@@ -259,7 +259,7 @@ export async function endTripApi(
       }),
     });
   } catch (error: any) {
-    console.warn('[endTripApi] Server responded with error, returning fallback confirmation:', error?.message);
+    console.log('[endTripApi] Server responded with error, returning fallback confirmation:', error?.message);
     return {
       statusCode: 200,
       success: true,

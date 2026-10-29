@@ -16,6 +16,17 @@ export function toPersianDigits(input: string | number | null | undefined): stri
 }
 
 /**
+ * Converts Persian or Arabic digits in any string or number to English/Latin digits.
+ */
+export function toEnglishDigits(input: string | number | null | undefined): string {
+  if (input === null || input === undefined) return '';
+  return input
+    .toString()
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+
+/**
  * Formats a distance number with Persian unit
  * Example: formatDistance(320) -> "۳۲۰ کیلومتر"
  */

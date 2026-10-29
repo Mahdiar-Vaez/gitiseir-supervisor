@@ -21,12 +21,12 @@ export function AppHeader({
   const insets = useSafeAreaInsets();
   const today = getCurrentJalaliDate();
 
-  // Dynamically resolve driver name from authenticated user session
+  // Dynamically resolve supervisor name from authenticated user session
   const userFullName = user
     ? `${user.name || ''} ${user.family || ''}`.trim()
     : '';
-  const resolvedName = driverName || userFullName || 'راننده گرامی';
-  const initialLetter = resolvedName ? resolvedName.charAt(0) : 'ر';
+  const resolvedName = driverName || userFullName || 'سرشوفر گیتی‌سیر';
+  const initialLetter = resolvedName ? resolvedName.charAt(0) : 'س';
 
   return (
     <View

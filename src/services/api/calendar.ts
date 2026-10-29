@@ -529,9 +529,9 @@ export const SAMPLE_WORK_CALENDAR_DAYS: WorkCalendarDay[] = [
  */
 export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
   {
-    tripWorkCalendarId: '7d664862-0cbd-421a-7497-08df1a1c035a',
+    tripWorkCalendarId: 'd4d6f068-b361-44f9-74ad-08df1a1c035a',
     tripId: 21454,
-    tripName: 'سرویس جهاد',
+    tripName: 'جهاد',
     status: 0,
     statusDisplay: 'Pending',
     passengerId: null,
@@ -539,10 +539,10 @@ export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
     driverId: 1044,
     driverFullName: 'حسین گلشاهی',
     driverTel: '02156178898',
-    licensePlate: '۶۴ ی ۲۷۴ ایران ۷۸',
+    licensePlate: '64ی274 ایران 78',
     carBodyColor: 'سفید',
     carModelYear: 1386,
-    carType: '۲۰۷',
+    carType: '207',
     outbound: {
       start: '19:00:00',
       end: '20:09:09',
@@ -553,23 +553,23 @@ export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
     temporaryDriverId: null,
     temporaryDriver: null,
     hasTemporaryDriver: false,
-    canSetTemporaryDriver: false,
+    canSetTemporaryDriver: true,
   },
   {
-    tripWorkCalendarId: '5b1d7827-0097-4965-758e-08df1a1c035a',
+    tripWorkCalendarId: '6aba73eb-f3c9-4169-75a1-08df1a1c035a',
     tripId: 21451,
-    tripName: 'سرویس جهاد',
-    status: 1,
-    statusDisplay: 'Confirmed',
+    tripName: 'جهاد',
+    status: 0,
+    statusDisplay: 'Pending',
     passengerId: null,
     passengerFullName: null,
     driverId: 1044,
     driverFullName: 'حسین گلشاهی',
     driverTel: '02156178898',
-    licensePlate: '۶۴ ی ۲۷۴ ایران ۷۸',
+    licensePlate: '64ی274 ایران 78',
     carBodyColor: 'سفید',
     carModelYear: 1386,
-    carType: '۲۰۷',
+    carType: '207',
     outbound: {
       start: '12:00:00',
       end: '13:00:00',
@@ -580,12 +580,12 @@ export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
     temporaryDriverId: null,
     temporaryDriver: null,
     hasTemporaryDriver: false,
-    canSetTemporaryDriver: false,
+    canSetTemporaryDriver: true,
   },
   {
-    tripWorkCalendarId: '671a468d-76a5-4d71-7608-08df1a1c035a',
+    tripWorkCalendarId: '2c29a53b-a881-4389-761b-08df1a1c035a',
     tripId: 21453,
-    tripName: 'سرویس جهاد',
+    tripName: 'جهاد',
     status: 0,
     statusDisplay: 'Pending',
     passengerId: null,
@@ -593,10 +593,10 @@ export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
     driverId: 1044,
     driverFullName: 'حسین گلشاهی',
     driverTel: '02156178898',
-    licensePlate: '۶۴ ی ۲۷۴ ایران ۷۸',
+    licensePlate: '64ی274 ایران 78',
     carBodyColor: 'سفید',
     carModelYear: 1386,
-    carType: '۲۰۷',
+    carType: '207',
     outbound: {
       start: '16:00:00',
       end: '17:00:00',
@@ -607,23 +607,23 @@ export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
     temporaryDriverId: null,
     temporaryDriver: null,
     hasTemporaryDriver: false,
-    canSetTemporaryDriver: false,
+    canSetTemporaryDriver: true,
   },
   {
-    tripWorkCalendarId: '9f8b4a1f-9644-461a-7681-08df1a1c035a',
+    tripWorkCalendarId: '74a37f04-01a2-47a4-7694-08df1a1c035a',
     tripId: 21450,
-    tripName: 'سرویس جهاد',
-    status: 1,
-    statusDisplay: 'Confirmed',
+    tripName: 'جهاد',
+    status: 0,
+    statusDisplay: 'Pending',
     passengerId: null,
     passengerFullName: null,
     driverId: 1044,
     driverFullName: 'حسین گلشاهی',
     driverTel: '02156178898',
-    licensePlate: '۶۴ ی ۲۷۴ ایران ۷۸',
+    licensePlate: '64ی274 ایران 78',
     carBodyColor: 'سفید',
     carModelYear: 1386,
-    carType: '۲۰۷',
+    carType: '207',
     outbound: {
       start: '10:00:00',
       end: '11:00:00',
@@ -634,23 +634,23 @@ export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
     temporaryDriverId: null,
     temporaryDriver: null,
     hasTemporaryDriver: false,
-    canSetTemporaryDriver: false,
+    canSetTemporaryDriver: true,
   },
   {
-    tripWorkCalendarId: '20a9a53f-7956-4e15-76fb-08df1a1c035a',
+    tripWorkCalendarId: '684ae66c-14ee-45a1-770e-08df1a1c035a',
     tripId: 21449,
-    tripName: 'سرویس جهاد',
-    status: 4,
-    statusDisplay: 'Cancelled',
+    tripName: 'جهاد',
+    status: 0,
+    statusDisplay: 'Pending',
     passengerId: null,
     passengerFullName: null,
     driverId: 1044,
     driverFullName: 'حسین گلشاهی',
     driverTel: '02156178898',
-    licensePlate: '۶۴ ی ۲۷۴ ایران ۷۸',
+    licensePlate: '64ی274 ایران 78',
     carBodyColor: 'سفید',
     carModelYear: 1386,
-    carType: '۲۰۷',
+    carType: '207',
     outbound: {
       start: '06:00:00',
       end: '07:00:00',
@@ -661,7 +661,7 @@ export const SAMPLE_DAY_TRIPS_GRID: DayTripGridItem[] = [
     temporaryDriverId: null,
     temporaryDriver: null,
     hasTemporaryDriver: false,
-    canSetTemporaryDriver: false,
+    canSetTemporaryDriver: true,
   },
 ];
 
@@ -691,7 +691,7 @@ export async function getWorkCalendarApi(
     }
     throw new Error('Invalid work calendar response from server');
   } catch (error: any) {
-    console.warn('[getWorkCalendarApi] Using fallback calendar data:', error?.message);
+    console.log('[getWorkCalendarApi] Using fallback calendar data:', error?.message);
 
     // Return realistic fallback calendar mapped for the requested year & month
     return {
@@ -731,38 +731,37 @@ export async function getDayTripsGridApi(
     }
     throw new Error('Invalid day trips grid response from server');
   } catch (error: any) {
-    console.warn('[getDayTripsGridApi] Using fallback day trips data:', error?.message);
+    console.log('[getDayTripsGridApi] Using fallback day trips data:', error?.message);
 
     // Check if the fallback monthly data has specific trips for this day
     const matchingDay = SAMPLE_WORK_CALENDAR_DAYS.find((d) => d.day === day);
-    let fallbackTrips: DayTripGridItem[] = [];
+    let fallbackTrips: DayTripGridItem[] = SAMPLE_DAY_TRIPS_GRID;
 
     if (matchingDay && matchingDay.trips.length > 0) {
       fallbackTrips = matchingDay.trips.map((t, idx) => ({
         tripWorkCalendarId: t.tripWorkCalendarId,
         tripId: t.tripId,
         tripName: t.tripName,
-        status: idx === 0 ? 1 : idx === 1 ? 0 : 4,
-        statusDisplay: idx === 0 ? 'Confirmed' : idx === 1 ? 'Pending' : 'Cancelled',
+        status: idx === 0 ? 1 : 0,
+        statusDisplay: idx === 0 ? 'Confirmed' : 'Pending',
         passengerId: t.passengerId,
         passengerFullName: null,
         driverId: t.driverId,
         driverFullName: t.driverFullName,
-        driverTel: '۰۲۱۵۶۱۷۸۸۹۸',
-        licensePlate: '۶۴ ی ۲۷۴ ایران ۷۸',
+        driverTel: '02156178898',
+        licensePlate: '64ی274 ایران 78',
         carBodyColor: 'سفید',
         carModelYear: 1386,
-        carType: '۲۰۷',
+        carType: '207',
         outbound: t.outbound,
         inbound: t.inbound,
         temporaryDriverId: t.temporaryDriverId,
         temporaryDriver: t.temporaryDriver,
         hasTemporaryDriver: t.hasTemporaryDriver,
-        canSetTemporaryDriver: t.canSetTemporaryDriver,
+        canSetTemporaryDriver: true,
       }));
-    } else if (day % 3 === 0) {
-      // Return high-density list for days like 6, 9, 12, 15
-      fallbackTrips = SAMPLE_DAY_TRIPS_GRID;
+    } else if (matchingDay && matchingDay.isHoliday) {
+      fallbackTrips = [];
     }
 
     return {
