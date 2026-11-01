@@ -1,31 +1,30 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bell, Moon, Sun, ShieldCheck } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { Moon, Sun, ShieldCheck, Repeat } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useSarshoofer } from '@/context/SarshooferContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { getCurrentJalaliDate } from '@/utils/jalali';
+import { toPersianDigits } from '@/utils/persian-digits';
 
 interface AppHeaderProps {
-  driverName?: string;
-  onNotificationPress?: () => void;
+  supervisorName?: string;
 }
 
-export function AppHeader({
-  driverName,
-  onNotificationPress,
-}: AppHeaderProps) {
+export function AppHeader({ supervisorName }: AppHeaderProps) {
   const { colors, isDark, toggleTheme } = useAppTheme();
   const { user } = useAuth();
+  const { stats } = useSarshoofer();
   const insets = useSafeAreaInsets();
   const today = getCurrentJalaliDate();
 
-  // Dynamically resolve supervisor name from authenticated user session
   const userFullName = user
     ? `${user.name || ''} ${user.family || ''}`.trim()
     : '';
-  const resolvedName = driverName || userFullName || 'سرشوفر گیتی‌سیر';
+  const resolvedName = supervisorName || userFullName || 'سرشوفر گرامی';
   const initialLetter = resolvedName ? resolvedName.charAt(0) : 'س';
 
   return (
@@ -39,35 +38,56 @@ export function AppHeader({
         },
       ]}
     >
-      {/* Right side in RTL (User profile & greeting) */}
+      {/* Right side in RTL: Avatar, Name & Jalali Date (Clean, no GPS clutter) */}
       <View style={styles.profileSection}>
         <View
           style={[
             styles.avatarContainer,
             {
-              backgroundColor: colors.goldBg,
-              borderColor: colors.gold,
+              backgroundColor: colors.commandBg,
+              borderColor: colors.command,
             },
           ]}
         >
-          <Text style={[styles.avatarText, { color: colors.gold }]}>
+          <Text style={[styles.avatarText, { color: colors.command }]}>
             {initialLetter}
           </Text>
-          <View style={[styles.verifiedBadge, { backgroundColor: colors.success }]}>
-            <ShieldCheck size={9} color="#FFFFFF" />
+          <View style={[styles.verifiedBadge, { backgroundColor: colors.gold }]}>
+            <ShieldCheck size={9} color="#071318" />
           </View>
         </View>
 
         <View style={styles.textContainer}>
-          <Text
-            numberOfLines={2}
-            style={[
-              styles.greetingText,
-              { color: colors.text, fontFamily: Typography.fontFamily.bold },
-            ]}
-          >
-            {resolvedName}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.greetingText,
+                { color: colors.text, fontFamily: Typography.fontFamily.bold },
+              ]}
+            >
+              {resolvedName}
+            </Text>
+            <View
+              style={[
+                styles.rolePill,
+                {
+                  backgroundColor: colors.commandBg,
+                  borderColor: colors.commandBorder,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.rolePillText,
+                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                سرشوفر
+              </Text>
+            </View>
+          </View>
+
           <Text
             numberOfLines={1}
             style={[
@@ -80,9 +100,8 @@ export function AppHeader({
         </View>
       </View>
 
-      {/* Left side in RTL (Action buttons: Theme toggle & Notifications) */}
+      {/* Left side in RTL: Theme Toggle & Quick Langi Tab Button */}
       <View style={styles.actionsSection}>
-        {/* Dual Theme Toggle: Sun / Moon */}
         <Pressable
           onPress={toggleTheme}
           hitSlop={6}
@@ -103,27 +122,32 @@ export function AppHeader({
           )}
         </Pressable>
 
-        {/* Notifications Button */}
         <Pressable
-          onPress={onNotificationPress}
+          onPress={() => router.navigate('/langi' as any)}
           hitSlop={6}
-          accessibilityLabel="اعلان‌ها"
+          accessibilityLabel="وضعیت لنگی‌ها"
           style={({ pressed }) => [
             styles.iconButton,
             {
               backgroundColor: colors.card,
-              borderColor: colors.border,
+              borderColor: stats.langiCount > 0 ? colors.langiBorder : colors.border,
               opacity: pressed ? 0.75 : 1,
             },
           ]}
         >
-          <Bell size={17} color={colors.textSecondary} />
-          <View
-            style={[
-              styles.notificationDot,
-              { backgroundColor: colors.gold, borderColor: colors.card },
-            ]}
-          />
+          <Repeat size={16} color={stats.langiCount > 0 ? colors.langi : colors.textSecondary} />
+          {stats.langiCount > 0 && (
+            <View
+              style={[
+                styles.badgeCounter,
+                { backgroundColor: colors.langi, borderColor: colors.card },
+              ]}
+            >
+              <Text style={styles.badgeCounterText}>
+                {toPersianDigits(stats.langiCount)}
+              </Text>
+            </View>
+          )}
         </Pressable>
       </View>
     </View>
@@ -156,7 +180,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   avatarText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   verifiedBadge: {
@@ -169,18 +193,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#0B0F19',
+    borderColor: '#071318',
   },
   textContainer: {
     alignItems: 'flex-end',
     flex: 1,
     justifyContent: 'center',
   },
+  nameRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+  },
   greetingText: {
-    fontSize: 14.5,
+    fontSize: 14,
     letterSpacing: -0.2,
     textAlign: 'right',
     lineHeight: 20,
+  },
+  rolePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  rolePillText: {
+    fontSize: 9.5,
   },
   dateText: {
     fontSize: 11,
@@ -199,14 +237,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
-  notificationDot: {
+  badgeCounter: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    borderWidth: 1,
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeCounterText: {
+    color: '#071318',
+    fontSize: 9,
+    fontWeight: 'bold',
   },
 });

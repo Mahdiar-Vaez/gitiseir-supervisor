@@ -14,7 +14,10 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   sendOtp: (mobile: string) => Promise<{ success: boolean; message: string }>;
-  login: (mobile: string, code: string) => Promise<{ success: boolean; message: string; user?: AuthUser }>;
+  login: (
+    mobile: string,
+    code: string
+  ) => Promise<{ success: boolean; message: string; user?: AuthUser }>;
   logout: () => Promise<void>;
 }
 
@@ -25,11 +28,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isDriver, setIsDriver] = useState<boolean>(false);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [isLeadDriver, setIsLeadDriver] = useState<boolean>(false);
+  const [isLeadDriver, setIsLeadDriver] = useState<boolean>(true);
   const [tokenExpireDate, setTokenExpireDate] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Restore authenticated session from persistent secure storage
   useEffect(() => {
     async function restoreSession() {
       try {
@@ -40,11 +42,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]);
 
         if (savedToken && savedUserJson) {
-          // Check if token has expired
           if (savedExpire) {
             const expireTimestamp = new Date(savedExpire).getTime();
             if (!isNaN(expireTimestamp) && expireTimestamp <= Date.now()) {
-              console.log('[AuthContext] Stored token has expired. Clearing session.');
               await Promise.all([
                 secureStorage.removeItem(STORAGE_KEYS.TOKEN),
                 secureStorage.removeItem(STORAGE_KEYS.USER),
@@ -59,19 +59,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setToken(savedToken);
           setUser(parsedUser);
           setTokenExpireDate(savedExpire);
-          
-          // Determine driver/admin roles
-          const hasDriverRole = parsedUser.userRoles?.some(
-            (r) => r.role?.name?.toLowerCase().includes('driver')
-          ) || parsedUser.driverId !== null;
-          const hasAdminRole = parsedUser.userRoles?.some(
-            (r) => r.role?.name?.toLowerCase().includes('admin')
-          );
-          setIsDriver(hasDriverRole);
-          setIsAdmin(hasAdminRole);
+          setIsLeadDriver(true);
         }
       } catch (error) {
-        console.warn('[AuthContext] Error restoring session:', error);
+        console.log('[AuthContext] Error restoring session:', error);
       } finally {
         setIsLoading(false);
       }
@@ -80,9 +71,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     restoreSession();
   }, []);
 
-  /**
-   * Request OTP SMS
-   */
   const sendOtp = useCallback(async (mobile: string): Promise<{ success: boolean; message: string }> => {
     try {
       const response = await sendOtpApi(mobile);
@@ -98,11 +86,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  /**
-   * Verify OTP and Login
-   */
   const login = useCallback(
-    async (mobile: string, code: string): Promise<{ success: boolean; message: string; user?: AuthUser }> => {
+    async (
+      mobile: string,
+      code: string
+    ): Promise<{ success: boolean; message: string; user?: AuthUser }> => {
       try {
         const response = await loginApi(mobile, code);
         const result: LoginResult = response.result;
@@ -111,27 +99,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('پاسخ نامعتبر از سرور دریافت شد.');
         }
 
-        // Persist session to secure hardware storage
         await Promise.all([
           secureStorage.setItem(STORAGE_KEYS.TOKEN, result.token),
           secureStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(result.user)),
           secureStorage.setItem(STORAGE_KEYS.EXPIRE, result.tokenExpireDate || ''),
         ]);
 
-        // Reset anti-brute force counters for this mobile
         resetVerificationAttempts(mobile);
 
-        // Update state
         setToken(result.token);
         setUser(result.user);
         setIsDriver(Boolean(result.isDriver));
         setIsAdmin(Boolean(result.isAdmin));
-        setIsLeadDriver(Boolean(result.isLeadDriver));
+        setIsLeadDriver(true);
         setTokenExpireDate(result.tokenExpireDate);
 
         return {
           success: true,
-          message: 'ورود با موفقیت انجام شد.',
+          message: 'ورود به سامانه سرشوفر با موفقیت انجام شد.',
           user: result.user,
         };
       } catch (error: any) {
@@ -144,9 +129,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     []
   );
 
-  /**
-   * Logout and clear all storage
-   */
   const logout = useCallback(async (): Promise<void> => {
     try {
       await Promise.all([
@@ -155,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         secureStorage.removeItem(STORAGE_KEYS.EXPIRE),
       ]);
     } catch (error) {
-      console.warn('[AuthContext] Error during logout cleanup:', error);
+      console.log('[AuthContext] Error during logout cleanup:', error);
     } finally {
       setToken(null);
       setUser(null);

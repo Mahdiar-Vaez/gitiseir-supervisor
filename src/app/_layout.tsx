@@ -13,8 +13,13 @@ import {
 } from '@expo-google-fonts/vazirmatn';
 
 import { AppThemeProvider, useAppTheme } from '@/context/ThemeContext';
+import { ToastProvider } from '@/context/ToastContext';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { CustomBottomTabBar, TabRoute } from '@/components/navigation/CustomBottomTabBar';
+import { SarshooferProvider } from '@/context/SarshooferContext';
+import {
+  CustomBottomTabBar,
+  TabRoute,
+} from '@/components/navigation/CustomBottomTabBar';
 import LoginScreen from './login';
 
 SplashScreen.preventAutoHideAsync();
@@ -33,12 +38,11 @@ function RootNavigator() {
           backgroundColor: colors.bg,
         }}
       >
-        <ActivityIndicator color="#D4AF37" size="large" />
+        <ActivityIndicator color={colors.command} size="large" />
       </View>
     );
   }
 
-  // If not authenticated, render LoginScreen directly without router redirect loop
   if (!isAuthenticated) {
     return <LoginScreen />;
   }
@@ -53,18 +57,22 @@ function RootNavigator() {
           const activeTab: TabRoute =
             currentRoute === 'calendar'
               ? 'calendar'
+              : currentRoute === 'langi'
+              ? 'langi'
               : currentRoute === 'profile'
               ? 'profile'
-              : 'home';
+              : 'drivers';
 
           return (
             <CustomBottomTabBar
               activeTab={activeTab}
               onTabChange={(target) => {
-                if (target === 'home') {
+                if (target === 'drivers') {
                   router.navigate('/' as any);
                 } else if (target === 'calendar') {
                   router.navigate('/calendar' as any);
+                } else if (target === 'langi') {
+                  router.navigate('/langi' as any);
                 } else if (target === 'profile') {
                   router.navigate('/profile' as any);
                 }
@@ -76,13 +84,13 @@ function RootNavigator() {
           headerShown: false,
         }}
       >
-        <Tabs.Screen name="index" options={{ title: 'خانه' }} />
+        <Tabs.Screen name="index" options={{ title: 'رانندگان امروز' }} />
         <Tabs.Screen name="calendar" options={{ title: 'تقویم کاری' }} />
-        <Tabs.Screen name="profile" options={{ title: 'کارت راننده' }} />
+        <Tabs.Screen name="langi" options={{ title: 'وضعیت و درخواست لنگی' }} />
+        <Tabs.Screen name="profile" options={{ title: 'کارت سرشوفر' }} />
         <Tabs.Screen
-          name="ratings"
+          name="login"
           options={{
-            title: 'امتیاز و نظرسنجی',
             href: null,
           }}
         />
@@ -113,19 +121,23 @@ export default function RootLayout() {
           flex: 1,
           justifyContent: 'center',
           alignItems: 'center',
-          backgroundColor: '#0B0F19',
+          backgroundColor: '#071318',
         }}
       >
-        <ActivityIndicator color="#D4AF37" size="large" />
+        <ActivityIndicator color="#14B8A6" size="large" />
       </View>
     );
   }
 
   return (
     <AppThemeProvider>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <SarshooferProvider>
+            <RootNavigator />
+          </SarshooferProvider>
+        </AuthProvider>
+      </ToastProvider>
     </AppThemeProvider>
   );
 }

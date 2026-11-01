@@ -1,1067 +1,511 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Pressable,
   RefreshControl,
-  ActivityIndicator,
   TextInput,
-  Modal,
+  Pressable,
+  ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useAppTheme } from '@/context/ThemeContext';
-import { useAuth } from '@/context/AuthContext';
-import { Typography, Spacing, BorderRadius } from '@/constants/theme';
-import { toPersianDigits, toEnglishDigits } from '@/utils/persian-digits';
-import { getCurrentJalaliDate } from '@/utils/jalali';
-import { AppHeader } from '@/components/ui/AppHeader';
-import { DayTripsTable } from '@/components/ui/DayTripsTable';
-import { TripSummaryModal } from '@/components/ui/TripSummaryModal';
-import { ConfirmAttendanceModal } from '@/components/ui/ConfirmAttendanceModal';
-import { AssignTempDriverModal } from '@/components/ui/AssignTempDriverModal';
-import { SosEmergencyModal } from '@/components/ui/SosEmergencyModal';
-import { ManagementContactModal } from '@/components/ui/ManagementContactModal';
 import {
-  CompanyServiceLocation,
-  SupervisorDailyBoardResult,
-  SupervisorDailyBoardItem,
-  DayTripGridItem,
-} from '@/services/api/types';
-import {
-  getServiceLocationsApi,
-  getSupervisorDailyBoardApi,
-  SAMPLE_SERVICE_LOCATIONS,
-} from '@/services/api/supervisor';
-import { getDayTripsGridApi } from '@/services/api/calendar';
-import {
+  Search,
+  X,
+  Users,
   MapPin,
   ArrowDownLeft,
   ArrowUpRight,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  PlayCircle,
-  Layers,
-  ChevronDown,
-  Search,
-  X,
-  PhoneCall,
-  Headphones,
   RefreshCw,
 } from 'lucide-react-native';
+import { useAppTheme } from '@/context/ThemeContext';
+import { useSarshoofer } from '@/context/SarshooferContext';
+import { Typography, Spacing, BorderRadius } from '@/constants/theme';
+import { toPersianDigits, toEnglishDigits } from '@/utils/persian-digits';
+import { TodayDriverItem, ArrivalStatus } from '@/services/api/types';
+import { AppHeader } from '@/components/ui/AppHeader';
+import {
+  FleetCommandBanner,
+  DriverFilterType,
+} from '@/components/ui/FleetCommandBanner';
+import { DriverAttendanceCard } from '@/components/ui/DriverAttendanceCard';
+import { ArrivalConfirmModal } from '@/components/ui/ArrivalConfirmModal';
+import { LangiRequestModal } from '@/components/ui/LangiRequestModal';
 
-function mapBoardItemToGridItem(item: SupervisorDailyBoardItem): DayTripGridItem {
-  const startStr = item.outbound?.start || item.scheduledStartTime || '06:00:00';
-  const endStr = item.outbound?.end || item.scheduledEndTime || '07:00:00';
-  const priceVal = item.outbound?.price ?? item.price ?? 1000000;
-
-  return {
-    tripWorkCalendarId:
-      item.tripWorkCalendarId || item.calendarDayId || String(item.tripId),
-    tripId: item.tripId,
-    tripName: item.tripName || `سرویس ${item.tripId}`,
-    status: item.status ?? 1,
-    statusDisplay: item.statusDisplay || 'Confirmed',
-    passengerId: null,
-    passengerFullName: null,
-    driverId: Number(item.driverId) || 0,
-    driverFullName: item.driverFullName || 'راننده نامشخص',
-    driverTel: item.driverTel || null,
-    licensePlate: item.licensePlate || null,
-    carType: item.carType || 'خودرو سرویس',
-    carModelYear: item.carModelYear || null,
-    carBodyColor: item.carBodyColor || null,
-    canSetTemporaryDriver: item.canSetTemporaryDriver ?? true,
-    hasTemporaryDriver: Boolean(item.hasTemporaryDriver),
-    temporaryDriverId: item.temporaryDriver?.id || null,
-    temporaryDriver: item.temporaryDriver || null,
-    outbound: {
-      start: startStr,
-      end: endStr,
-      price: priceVal,
-    },
-    inbound: item.inbound || null,
-  };
-}
-
-export default function SupervisorHomeScreen() {
+export default function TodayDriversScreen() {
   const { colors, isDark } = useAppTheme();
-  const { token } = useAuth();
-  const todayJalali = useMemo(() => getCurrentJalaliDate(), []);
-
-  // Service Location & Direction state
-  const [locations, setLocations] = useState<CompanyServiceLocation[]>(
-    SAMPLE_SERVICE_LOCATIONS
-  );
-  const [selectedLocationId, setSelectedLocationId] = useState<number>(18);
-  const [entering, setEntering] = useState<boolean>(true);
-  const [locationModalVisible, setLocationModalVisible] = useState<boolean>(false);
-  const [locationSearch, setLocationSearch] = useState<string>('');
-  const [customLocationIdInput, setCustomLocationIdInput] = useState<string>('18');
-
-  // Board & Calendar Trips state
-  const [dailyBoard, setDailyBoard] = useState<SupervisorDailyBoardResult | null>(
-    null
-  );
-  const [calendarTrips, setCalendarTrips] = useState<DayTripGridItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'all_today' | 'board_only'>('all_today');
-  const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [refreshIndex, setRefreshIndex] = useState<number>(0);
-
-  // Modals state
-  const [selectedGridTrip, setSelectedGridTrip] =
-    useState<DayTripGridItem | null>(null);
-  const [summaryModalVisible, setSummaryModalVisible] = useState<boolean>(false);
-
-  const [attendanceTrip, setAttendanceTrip] = useState<DayTripGridItem | null>(
-    null
-  );
-  const [tempDriverTrip, setTempDriverTrip] = useState<DayTripGridItem | null>(
-    null
-  );
-
-  const [sosModalVisible, setSosModalVisible] = useState<boolean>(false);
-  const [managementModalVisible, setManagementModalVisible] =
-    useState<boolean>(false);
-
-  // Load Service Locations once
-  useEffect(() => {
-    let isCancelled = false;
-    getServiceLocationsApi(token).then((list) => {
-      if (!isCancelled && list.length > 0) {
-        setLocations(list);
-      }
-    });
-    return () => {
-      isCancelled = true;
-    };
-  }, [token]);
-
-  // Fetch Daily Board & Today's Work Calendar Grid
-  useEffect(() => {
-    let isCancelled = false;
-
-    const fetchSupervisorData = async () => {
-      setLoading(true);
-      try {
-        const [boardRes, gridRes] = await Promise.all([
-          getSupervisorDailyBoardApi(selectedLocationId, entering, token),
-          getDayTripsGridApi(
-            todayJalali.year,
-            todayJalali.month,
-            todayJalali.day,
-            token
-          ),
-        ]);
-
-        if (!isCancelled) {
-          if (boardRes && boardRes.result) {
-            setDailyBoard(boardRes.result);
-          }
-          if (gridRes && Array.isArray(gridRes.result)) {
-            setCalendarTrips(gridRes.result);
-          }
-        }
-      } catch (err: any) {
-        console.log('[SupervisorHomeScreen] Fetch error:', err?.message);
-      } finally {
-        if (!isCancelled) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    };
-
-    fetchSupervisorData();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [
-    selectedLocationId,
+  const {
+    drivers,
+    dailyBoard,
+    serviceLocations,
+    companyServiceLocationId,
     entering,
-    token,
-    refreshIndex,
-    todayJalali.year,
-    todayJalali.month,
-    todayJalali.day,
-  ]);
+    setCompanyServiceLocationId,
+    setEntering,
+    loading,
+    refreshing,
+    refreshFleet,
+    confirmDriverArrival,
+  } = useSarshoofer();
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setRefreshIndex((prev) => prev + 1);
-  }, []);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [activeFilter, setActiveFilter] = useState<DriverFilterType>('all');
+  const [locationInput, setLocationInput] = useState<string>(
+    String(companyServiceLocationId)
+  );
 
-  const boardGridItems = useMemo(() => {
-    if (!dailyBoard || !Array.isArray(dailyBoard.items)) return [];
-    return dailyBoard.items.map(mapBoardItemToGridItem);
-  }, [dailyBoard]);
+  // Arrival Confirmation Modal State
+  const [confirmModalVisible, setConfirmModalVisible] = useState<boolean>(false);
+  const [selectedDriverForArrival, setSelectedDriverForArrival] =
+    useState<TodayDriverItem | null>(null);
+  const [targetArrivalStatus, setTargetArrivalStatus] =
+    useState<ArrivalStatus>('arrived');
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const displayedTrips = useMemo(() => {
-    if (activeTab === 'board_only') {
-      return boardGridItems;
-    }
-    // Combine board items & calendar trips without duplicates
-    const map = new Map<string, DayTripGridItem>();
-    calendarTrips.forEach((t) => {
-      map.set(t.tripWorkCalendarId || String(t.tripId), t);
-    });
-    boardGridItems.forEach((t) => {
-      const key = t.tripWorkCalendarId || String(t.tripId);
-      if (!map.has(key)) {
-        map.set(key, t);
+  // Langi Request Modal State
+  const [langiModalVisible, setLangiModalVisible] = useState<boolean>(false);
+  const [selectedDriverForLangi, setSelectedDriverForLangi] =
+    useState<TodayDriverItem | null>(null);
+
+  const filteredDrivers = useMemo(() => {
+    return drivers.filter((item) => {
+      if (activeFilter === 'pending' && item.arrivalStatus !== 'pending') return false;
+      if (activeFilter === 'arrived' && item.arrivalStatus !== 'arrived') return false;
+      if (activeFilter === 'not_arrived' && item.arrivalStatus !== 'not_arrived')
+        return false;
+      if (activeFilter === 'langi' && !item.hasLangi) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const matchName = item.driverFullName.toLowerCase().includes(q);
+        const matchTrip = item.tripName.toLowerCase().includes(q);
+        const matchPlate = item.licensePlate.toLowerCase().includes(q);
+        const matchLangi =
+          item.langi &&
+          `${item.langi.name} ${item.langi.family}`.toLowerCase().includes(q);
+        if (!matchName && !matchTrip && !matchPlate && !matchLangi) return false;
       }
+
+      return true;
     });
-    return Array.from(map.values());
-  }, [activeTab, boardGridItems, calendarTrips]);
+  }, [drivers, activeFilter, searchQuery]);
 
-  const selectedLocationTitle = useMemo(() => {
-    if (
-      dailyBoard?.companyServiceLocationId === selectedLocationId &&
-      dailyBoard?.companyServiceLocationTitle
-    ) {
-      return dailyBoard.companyServiceLocationTitle;
-    }
-    const found = locations.find((l) => l.id === selectedLocationId);
-    return found ? found.title : `محل خدمت کد ${toPersianDigits(selectedLocationId)}`;
-  }, [dailyBoard, locations, selectedLocationId]);
-
-  const filteredLocations = useMemo(() => {
-    const q = toEnglishDigits(locationSearch).trim().toLowerCase();
-    if (!q) return locations;
-    return locations.filter(
-      (loc) =>
-        loc.title.toLowerCase().includes(q) ||
-        String(loc.id).includes(q) ||
-        (loc.companyName && loc.companyName.toLowerCase().includes(q))
-    );
-  }, [locations, locationSearch]);
-
-  const handleApplyCustomLocationId = () => {
-    const num = parseInt(toEnglishDigits(customLocationIdInput), 10);
-    if (!isNaN(num) && num > 0) {
-      setSelectedLocationId(num);
-      setLocationModalVisible(false);
+  const handleApplyLocationId = () => {
+    const parsed = Number(toEnglishDigits(locationInput).replace(/\D/g, ''));
+    if (parsed > 0) {
+      setCompanyServiceLocationId(parsed);
     }
   };
 
-  const handleOpenTripDetails = (trip: DayTripGridItem) => {
-    setSelectedGridTrip(trip);
-    setSummaryModalVisible(true);
+  const handleOpenArrivalModal = (
+    driverItem: TodayDriverItem,
+    status: ArrivalStatus
+  ) => {
+    setSelectedDriverForArrival(driverItem);
+    setTargetArrivalStatus(status);
+    setConfirmModalVisible(true);
   };
 
-  const handleOpenConfirmAttendance = (trip: DayTripGridItem) => {
-    setAttendanceTrip(trip);
+  const handleConfirmArrivalSubmit = async (
+    tripWorkCalendarId: string,
+    status: ArrivalStatus,
+    note: string,
+    openLangiAfter: boolean
+  ) => {
+    const targetDriver = selectedDriverForArrival;
+    setProcessingId(tripWorkCalendarId);
+    try {
+      await confirmDriverArrival(tripWorkCalendarId, status, note);
+      setConfirmModalVisible(false);
+
+      if (openLangiAfter && targetDriver) {
+        setTimeout(() => {
+          router.navigate('/calendar' as any);
+        }, 220);
+      }
+    } finally {
+      setProcessingId(null);
+    }
   };
 
-  const handleOpenAssignTempDriver = (trip: DayTripGridItem) => {
-    setTempDriverTrip(trip);
+  const handleOpenLangiModal = (driverItem?: TodayDriverItem) => {
+    if (driverItem && driverItem.hasLangi) {
+      setSelectedDriverForLangi(driverItem);
+      setLangiModalVisible(true);
+    } else {
+      router.navigate('/calendar' as any);
+    }
   };
-
-  // Summary Counters (use dailyBoard counters or fallback to displayedTrips)
-  const totalCount = dailyBoard?.totalCount ?? displayedTrips.length;
-  const scheduledCount =
-    dailyBoard?.scheduledCount ??
-    displayedTrips.filter((t) => t.status === 0 || t.status === 1).length;
-  const startedCount =
-    dailyBoard?.startedCount ??
-    displayedTrips.filter((t) => t.status === 2).length;
-  const completedCount =
-    dailyBoard?.completedCount ??
-    displayedTrips.filter((t) => t.status === 3).length;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <AppHeader />
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 28 }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.gold}
-            colors={[colors.gold]}
+            onRefresh={refreshFleet}
+            tintColor={colors.command}
+            colors={[colors.command]}
           />
         }
       >
-        {/* 1. Service Location & Direction Control Card (بورد روزانه سرشوفر) */}
+        {/* 0. Daily Board Location & Direction Filter Card */}
         <View
           style={[
-            styles.boardControlCard,
+            styles.dailyBoardFilterCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.commandBorder,
+            },
+          ]}
+        >
+          <View style={styles.dailyBoardHeaderRow}>
+            <View style={styles.directionToggleGroup}>
+              <TouchableOpacity
+                onPress={() => setEntering(true)}
+                style={[
+                  styles.dirBtn,
+                  {
+                    backgroundColor: entering ? colors.command : 'transparent',
+                    borderColor: entering ? colors.command : colors.border,
+                  },
+                ]}
+              >
+                <ArrowDownLeft
+                  size={13}
+                  color={entering ? '#071318' : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.dirBtnText,
+                    {
+                      color: entering ? '#071318' : colors.textSecondary,
+                      fontFamily: entering
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                    },
+                  ]}
+                >
+                  سرویس‌های ورودی
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setEntering(false)}
+                style={[
+                  styles.dirBtn,
+                  {
+                    backgroundColor: !entering ? colors.gold : 'transparent',
+                    borderColor: !entering ? colors.gold : colors.border,
+                  },
+                ]}
+              >
+                <ArrowUpRight
+                  size={13}
+                  color={!entering ? '#071318' : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.dirBtnText,
+                    {
+                      color: !entering ? '#071318' : colors.textSecondary,
+                      fontFamily: !entering
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                    },
+                  ]}
+                >
+                  سرویس‌های خروجی
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.boardTitleGroup}>
+              <Text
+                style={[
+                  styles.boardTitleText,
+                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                بورد روزانه محل خدمت
+              </Text>
+              <MapPin size={15} color={colors.command} />
+            </View>
+          </View>
+
+          {/* Service Location Selector or ID Input */}
+          {serviceLocations.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.locationsChipsRow}
+            >
+              {serviceLocations.map((loc) => {
+                const active = loc.id === companyServiceLocationId;
+                return (
+                  <TouchableOpacity
+                    key={loc.id}
+                    onPress={() => {
+                      setCompanyServiceLocationId(loc.id);
+                      setLocationInput(String(loc.id));
+                    }}
+                    style={[
+                      styles.locChip,
+                      {
+                        backgroundColor: active
+                          ? colors.commandBg
+                          : isDark
+                          ? '#071318'
+                          : '#F8FAFC',
+                        borderColor: active ? colors.command : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.locChipText,
+                        {
+                          color: active ? colors.command : colors.textSecondary,
+                          fontFamily: active
+                            ? Typography.fontFamily.bold
+                            : Typography.fontFamily.regular,
+                        },
+                      ]}
+                    >
+                      {loc.title} ({toPersianDigits(loc.id)})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          ) : null}
+
+          <View style={styles.locationInputRow}>
+            <TouchableOpacity
+              onPress={handleApplyLocationId}
+              style={[
+                styles.applyLocBtn,
+                { backgroundColor: colors.command },
+              ]}
+            >
+              <RefreshCw size={13} color="#071318" />
+              <Text
+                style={[
+                  styles.applyLocBtnText,
+                  { fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                استعلام بورد
+              </Text>
+            </TouchableOpacity>
+
+            <TextInput
+              value={locationInput}
+              onChangeText={setLocationInput}
+              onSubmitEditing={handleApplyLocationId}
+              keyboardType="numeric"
+              placeholder="کد محل خدمت (مثال: 18)"
+              placeholderTextColor={colors.textMuted}
+              style={[
+                styles.locIdInput,
+                {
+                  backgroundColor: isDark ? '#071318' : '#F8FAFC',
+                  borderColor: colors.border,
+                  color: colors.text,
+                  fontFamily: Typography.fontFamily.bold,
+                },
+              ]}
+            />
+
+            <Text
+              style={[
+                styles.locIdLabel,
+                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+              ]}
+            >
+              کد محل خدمت:
+            </Text>
+          </View>
+
+          {dailyBoard ? (
+            <View
+              style={[
+                styles.boardSummaryBar,
+                {
+                  backgroundColor: isDark ? '#071318' : '#F0FDFA',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.boardSummaryText,
+                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                {dailyBoard.companyServiceLocationTitle} ({dailyBoard.directionTitle})
+              </Text>
+              <Text
+                style={[
+                  styles.boardCountsText,
+                  { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
+                ]}
+              >
+                کل: {toPersianDigits(dailyBoard.totalCount)} | زمان‌بندی:{' '}
+                {toPersianDigits(dailyBoard.scheduledCount)} | در جریان:{' '}
+                {toPersianDigits(dailyBoard.startedCount)} | تکمیل:{' '}
+                {toPersianDigits(dailyBoard.completedCount)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* 1. Compact Attendance Summary & Filter Strip */}
+        <FleetCommandBanner
+          activeFilter={activeFilter}
+          onSelectFilter={setActiveFilter}
+          onOpenNewLangi={() => router.navigate('/calendar' as any)}
+        />
+
+        {/* 2. Search Input */}
+        <View
+          style={[
+            styles.searchBox,
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
             },
           ]}
         >
-          <View style={styles.boardCardHeader}>
-            <View style={styles.boardTitleGroup}>
-              <View
+          <Search size={16} color={colors.command} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="جستجوی نام راننده، پلاک یا سرویس..."
+            placeholderTextColor={colors.textMuted}
+            style={[
+              styles.searchInput,
+              {
+                color: colors.text,
+                fontFamily: Typography.fontFamily.regular,
+              },
+            ]}
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+              <X size={16} color={colors.textMuted} />
+            </Pressable>
+          )}
+        </View>
+
+        {/* 3. Section Header: Today's Drivers List */}
+        <View style={styles.sectionHeader}>
+          <Text
+            style={[
+              styles.countSubtitle,
+              { color: colors.textMuted, fontFamily: Typography.fontFamily.medium },
+            ]}
+          >
+            {toPersianDigits(filteredDrivers.length)} سرویس در سرور
+          </Text>
+
+          <View style={styles.sectionTitleGroup}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: colors.text, fontFamily: Typography.fontFamily.bold },
+              ]}
+            >
+              لیست راننده‌ها و سرویس‌های امروز
+            </Text>
+            <View
+              style={[
+                styles.accentBar,
+                { backgroundColor: colors.command },
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* 4. Drivers Cards List */}
+        <View style={styles.cardsList}>
+          {loading ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="small" color={colors.command} />
+              <Text
                 style={[
-                  styles.iconCircle,
-                  { backgroundColor: colors.goldBg, borderColor: colors.gold },
+                  styles.loadingText,
+                  { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                <MapPin size={18} color={colors.gold} />
-              </View>
-              <View style={styles.boardTitleTextCol}>
-                <Text
-                  style={[
-                    styles.boardMainTitle,
-                    { color: colors.text, fontFamily: Typography.fontFamily.bold },
-                  ]}
-                >
-                  بورد روزانه سرشوفر (Daily Board)
-                </Text>
-                <Text
-                  style={[
-                    styles.boardSubTitle,
-                    {
-                      color: colors.textMuted,
-                      fontFamily: Typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  انتخاب محل خدمت و جهت سرویس (ورودی / خروجی)
-                </Text>
-              </View>
+                در حال دریافت فهرست واقعی رانندگان امروز از سرور...
+              </Text>
             </View>
-
-            <Pressable
-              onPress={onRefresh}
-              style={({ pressed }) => [
-                styles.refreshIconBtn,
+          ) : filteredDrivers.length > 0 ? (
+            filteredDrivers.map((driverItem) => (
+              <DriverAttendanceCard
+                key={driverItem.tripWorkCalendarId}
+                item={driverItem}
+                isProcessingGps={processingId === driverItem.tripWorkCalendarId}
+                onPressArrivalAction={handleOpenArrivalModal}
+                onPressLangiAction={handleOpenLangiModal}
+              />
+            ))
+          ) : (
+            <View
+              style={[
+                styles.emptyStateCard,
                 {
-                  backgroundColor: colors.cardSubtle,
+                  backgroundColor: isDark ? '#0D1F28' : '#FFFFFF',
                   borderColor: colors.border,
-                  opacity: pressed ? 0.7 : 1,
                 },
               ]}
             >
-              <RefreshCw size={15} color={colors.gold} />
-            </Pressable>
-          </View>
-
-          {/* Service Location Selector Button */}
-          <Pressable
-            onPress={() => {
-              setCustomLocationIdInput(String(selectedLocationId));
-              setLocationModalVisible(true);
-            }}
-            style={({ pressed }) => [
-              styles.locationSelectorBtn,
-              {
-                backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
-                borderColor: colors.gold,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <View style={styles.locationSelectorRight}>
-              <View
-                style={[
-                  styles.locationIdBadge,
-                  { backgroundColor: colors.goldBg },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.locationIdText,
-                    { color: colors.gold, fontFamily: Typography.fontFamily.bold },
-                  ]}
-                >
-                  ID: {toPersianDigits(selectedLocationId)}
-                </Text>
-              </View>
+              <Users size={26} color={colors.command} />
               <Text
-                numberOfLines={1}
                 style={[
-                  styles.locationTitleText,
+                  styles.emptyStateTitle,
                   { color: colors.text, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                {selectedLocationTitle}
+                هیچ راننده یا سرویسی برای امروز در سرور یافت نشد
+              </Text>
+              <Text
+                style={[
+                  styles.emptyStateSubtitle,
+                  { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+                ]}
+              >
+                {dailyBoard
+                  ? `برای محل خدمت «${dailyBoard.companyServiceLocationTitle}» (${dailyBoard.directionTitle}) در حال حاضر ۰ سرویس در سرور ثبت شده است. همچنین می‌توانید از تب «تقویم کاری» سایر روزها را بررسی و مدیریت کنید.`
+                  : 'می‌توانید کد محل خدمت دیگری را استعلام کنید یا از تب «تقویم کاری» سفرهای هر روز را مشاهده و مدیریت نمایید.'}
               </Text>
             </View>
-
-            <View style={styles.locationSelectorLeft}>
-              <Text
-                style={[
-                  styles.changeLocationLabel,
-                  { color: colors.gold, fontFamily: Typography.fontFamily.medium },
-                ]}
-              >
-                تغییر محل خدمت
-              </Text>
-              <ChevronDown size={16} color={colors.gold} />
-            </View>
-          </Pressable>
-
-          {/* Entering / Exiting Toggle */}
-          <View style={styles.directionToggleRow}>
-            <Pressable
-              onPress={() => setEntering(true)}
-              style={[
-                styles.directionBtn,
-                {
-                  backgroundColor: entering
-                    ? colors.gold
-                    : isDark
-                    ? '#0B0F19'
-                    : '#F1F5F9',
-                  borderColor: entering ? colors.gold : colors.border,
-                },
-              ]}
-            >
-              <ArrowDownLeft
-                size={15}
-                color={entering ? '#090D16' : colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.directionBtnText,
-                  {
-                    color: entering ? '#090D16' : colors.textSecondary,
-                    fontFamily: entering
-                      ? Typography.fontFamily.bold
-                      : Typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                ورودی به محل خدمت
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setEntering(false)}
-              style={[
-                styles.directionBtn,
-                {
-                  backgroundColor: !entering
-                    ? colors.gold
-                    : isDark
-                    ? '#0B0F19'
-                    : '#F1F5F9',
-                  borderColor: !entering ? colors.gold : colors.border,
-                },
-              ]}
-            >
-              <ArrowUpRight
-                size={15}
-                color={!entering ? '#090D16' : colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.directionBtnText,
-                  {
-                    color: !entering ? '#090D16' : colors.textSecondary,
-                    fontFamily: !entering
-                      ? Typography.fontFamily.bold
-                      : Typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                خروجی از محل خدمت
-              </Text>
-            </Pressable>
-          </View>
+          )}
         </View>
-
-        {/* 2. Daily Board 4 Summary Stat Cards */}
-        <View style={styles.statsGrid}>
-          <View
-            style={[
-              styles.statCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View
-              style={[
-                styles.statIconWrap,
-                { backgroundColor: colors.goldBg },
-              ]}
-            >
-              <Layers size={16} color={colors.gold} />
-            </View>
-            <Text
-              style={[
-                styles.statValue,
-                { color: colors.text, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              {toPersianDigits(totalCount)}
-            </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                {
-                  color: colors.textMuted,
-                  fontFamily: Typography.fontFamily.regular,
-                },
-              ]}
-            >
-              کل سرویس‌ها
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.statCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View
-              style={[
-                styles.statIconWrap,
-                { backgroundColor: 'rgba(59, 130, 246, 0.12)' },
-              ]}
-            >
-              <Clock size={16} color="#3B82F6" />
-            </View>
-            <Text
-              style={[
-                styles.statValue,
-                { color: '#3B82F6', fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              {toPersianDigits(scheduledCount)}
-            </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                {
-                  color: colors.textMuted,
-                  fontFamily: Typography.fontFamily.regular,
-                },
-              ]}
-            >
-              برنامه‌ریزی شده
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.statCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View
-              style={[
-                styles.statIconWrap,
-                { backgroundColor: colors.warningBg },
-              ]}
-            >
-              <PlayCircle size={16} color={colors.warning} />
-            </View>
-            <Text
-              style={[
-                styles.statValue,
-                { color: colors.warning, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              {toPersianDigits(startedCount)}
-            </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                {
-                  color: colors.textMuted,
-                  fontFamily: Typography.fontFamily.regular,
-                },
-              ]}
-            >
-              در حال انجام
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.statCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View
-              style={[
-                styles.statIconWrap,
-                { backgroundColor: colors.successBg },
-              ]}
-            >
-              <CheckCircle2 size={16} color={colors.success} />
-            </View>
-            <Text
-              style={[
-                styles.statValue,
-                { color: colors.success, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              {toPersianDigits(completedCount)}
-            </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                {
-                  color: colors.textMuted,
-                  fontFamily: Typography.fontFamily.regular,
-                },
-              ]}
-            >
-              تکمیل شده
-            </Text>
-          </View>
-        </View>
-
-        {/* 3. Quick Supervisor Shortcuts */}
-        <View style={styles.quickRow}>
-          <Pressable
-            onPress={() => router.navigate('/calendar' as any)}
-            style={({ pressed }) => [
-              styles.quickActionCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-          >
-            <Calendar size={17} color={colors.gold} />
-            <Text
-              style={[
-                styles.quickActionText,
-                { color: colors.text, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              تقویم کاری کامل
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setManagementModalVisible(true)}
-            style={({ pressed }) => [
-              styles.quickActionCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-          >
-            <Headphones size={17} color={colors.gold} />
-            <Text
-              style={[
-                styles.quickActionText,
-                { color: colors.text, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              ارتباط با مدیریت
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setSosModalVisible(true)}
-            style={({ pressed }) => [
-              styles.quickActionCard,
-              {
-                backgroundColor: colors.dangerBg,
-                borderColor: colors.danger,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-          >
-            <PhoneCall size={17} color={colors.danger} />
-            <Text
-              style={[
-                styles.quickActionText,
-                { color: colors.danger, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              امداد اضطراری
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* 4. Data Source Tabs: All Today's Calendar Trips vs Location Board Only */}
-        <View style={styles.sectionHeaderRow}>
-          <View style={styles.tabSwitchContainer}>
-            <Pressable
-              onPress={() => setActiveTab('all_today')}
-              style={[
-                styles.sourceTabBtn,
-                {
-                  backgroundColor:
-                    activeTab === 'all_today' ? colors.gold : colors.card,
-                  borderColor:
-                    activeTab === 'all_today' ? colors.gold : colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.sourceTabText,
-                  {
-                    color:
-                      activeTab === 'all_today'
-                        ? '#090D16'
-                        : colors.textSecondary,
-                    fontFamily:
-                      activeTab === 'all_today'
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                سرویس‌های امروز ({toPersianDigits(displayedTrips.length)})
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setActiveTab('board_only')}
-              style={[
-                styles.sourceTabBtn,
-                {
-                  backgroundColor:
-                    activeTab === 'board_only' ? colors.gold : colors.card,
-                  borderColor:
-                    activeTab === 'board_only' ? colors.gold : colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.sourceTabText,
-                  {
-                    color:
-                      activeTab === 'board_only'
-                        ? '#090D16'
-                        : colors.textSecondary,
-                    fontFamily:
-                      activeTab === 'board_only'
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                فقط بورد محل خدمت ({toPersianDigits(boardGridItems.length)})
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* 5. Searchable & Filterable Data-Grid Table with Supervisor Actions */}
-        {loading && displayedTrips.length === 0 ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="small" color={colors.gold} />
-            <Text
-              style={[
-                styles.loadingText,
-                {
-                  color: colors.textMuted,
-                  fontFamily: Typography.fontFamily.regular,
-                },
-              ]}
-            >
-              در حال دریافت اطلاعات بورد روزانه و تقویم کاری...
-            </Text>
-          </View>
-        ) : (
-          <DayTripsTable
-            trips={displayedTrips}
-            onSelectTrip={handleOpenTripDetails}
-            showSupervisorActions={true}
-            onConfirmAttendance={handleOpenConfirmAttendance}
-            onAssignTempDriver={handleOpenAssignTempDriver}
-          />
-        )}
       </ScrollView>
 
-      {/* Service Location Picker Modal */}
-      <Modal
-        visible={locationModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLocationModalVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View
-            style={[
-              styles.locationModalContainer,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.locationModalHeader}>
-              <Text
-                style={[
-                  styles.locationModalTitle,
-                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                انتخاب محل خدمت (Service Location)
-              </Text>
-              <TouchableOpacity
-                onPress={() => setLocationModalVisible(false)}
-                style={[
-                  styles.closeBtn,
-                  { backgroundColor: colors.cardSubtle },
-                ]}
-              >
-                <X size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Manual Location ID Entry */}
-            <View
-              style={[
-                styles.manualIdBox,
-                {
-                  backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.manualIdLabel,
-                  {
-                    color: colors.textSecondary,
-                    fontFamily: Typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                ورود دستی کد محل خدمت (companyServiceLocationId):
-              </Text>
-              <View style={styles.manualIdInputRow}>
-                <TextInput
-                  value={customLocationIdInput}
-                  onChangeText={setCustomLocationIdInput}
-                  keyboardType="numeric"
-                  placeholder="مثلاً 18"
-                  placeholderTextColor={colors.textMuted}
-                  style={[
-                    styles.manualIdInput,
-                    {
-                      color: colors.text,
-                      borderColor: colors.border,
-                      backgroundColor: colors.card,
-                      fontFamily: Typography.fontFamily.bold,
-                    },
-                  ]}
-                />
-                <TouchableOpacity
-                  onPress={handleApplyCustomLocationId}
-                  style={[
-                    styles.applyIdBtn,
-                    { backgroundColor: colors.gold },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.applyIdBtnText,
-                      {
-                        color: '#090D16',
-                        fontFamily: Typography.fontFamily.bold,
-                      },
-                    ]}
-                  >
-                    اعمال کد
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Search Locations */}
-            <View
-              style={[
-                styles.searchLocationBox,
-                {
-                  backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Search size={16} color={colors.textMuted} />
-              <TextInput
-                value={locationSearch}
-                onChangeText={setLocationSearch}
-                placeholder="جستجوی نام محل خدمت یا شرکت..."
-                placeholderTextColor={colors.textMuted}
-                style={[
-                  styles.searchLocationInput,
-                  {
-                    color: colors.text,
-                    fontFamily: Typography.fontFamily.regular,
-                  },
-                ]}
-              />
-            </View>
-
-            <ScrollView style={{ maxHeight: 280 }}>
-              {filteredLocations.map((loc) => {
-                const isSelected = loc.id === selectedLocationId;
-                return (
-                  <TouchableOpacity
-                    key={loc.id}
-                    onPress={() => {
-                      setSelectedLocationId(loc.id);
-                      setLocationModalVisible(false);
-                    }}
-                    style={[
-                      styles.locationListItem,
-                      {
-                        backgroundColor: isSelected
-                          ? colors.goldBg
-                          : 'transparent',
-                        borderColor: isSelected ? colors.gold : colors.border,
-                      },
-                    ]}
-                  >
-                    <View style={styles.locationItemRight}>
-                      <Text
-                        style={[
-                          styles.locationItemTitle,
-                          {
-                            color: isSelected ? colors.gold : colors.text,
-                            fontFamily: Typography.fontFamily.bold,
-                          },
-                        ]}
-                      >
-                        {loc.title}
-                      </Text>
-                      {loc.companyName ? (
-                        <Text
-                          style={[
-                            styles.locationItemCompany,
-                            {
-                              color: colors.textMuted,
-                              fontFamily: Typography.fontFamily.regular,
-                            },
-                          ]}
-                        >
-                          {loc.companyName}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <View
-                      style={[
-                        styles.locationIdPill,
-                        {
-                          backgroundColor: isSelected
-                            ? colors.gold
-                            : colors.cardSubtle,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: isSelected ? '#090D16' : colors.textSecondary,
-                          fontFamily: Typography.fontFamily.bold,
-                        }}
-                      >
-                        کد {toPersianDigits(loc.id)}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Trip Details Modal */}
-      <TripSummaryModal
-        visible={summaryModalVisible}
-        tripId={selectedGridTrip?.tripId ?? null}
-        initialTrip={
-          selectedGridTrip
-            ? {
-                tripId: selectedGridTrip.tripId,
-                tripName: selectedGridTrip.tripName,
-                status: selectedGridTrip.status,
-                scheduledStartTime:
-                  selectedGridTrip.outbound?.start ||
-                  selectedGridTrip.inbound?.start ||
-                  '۰۰:۰۰',
-                scheduledEndTime:
-                  selectedGridTrip.outbound?.end ||
-                  selectedGridTrip.inbound?.end ||
-                  '۰۰:۰۰',
-                outboundStart: selectedGridTrip.outbound?.start,
-                outboundEnd: selectedGridTrip.outbound?.end,
-                outboundPrice:
-                  selectedGridTrip.outbound?.price ||
-                  selectedGridTrip.inbound?.price ||
-                  0,
-                licensePlate: selectedGridTrip.licensePlate || undefined,
-                calendarDayId: selectedGridTrip.tripWorkCalendarId,
-                serviceLocationTitle: selectedGridTrip.tripName,
-                driverFullName: selectedGridTrip.driverFullName,
-                totalStations: 5,
-                visitedStations: selectedGridTrip.status === 3 ? 5 : 0,
-              }
-            : null
-        }
-        calendarDayId={selectedGridTrip?.tripWorkCalendarId || ''}
-        canStartTrip={false}
-        canEndTrip={false}
-        onClose={() => {
-          setSummaryModalVisible(false);
-          setSelectedGridTrip(null);
-        }}
+      {/* Modal 1: Confirm Arrival / Non-Arrival */}
+      <ArrivalConfirmModal
+        visible={confirmModalVisible}
+        driverItem={selectedDriverForArrival}
+        targetStatus={targetArrivalStatus}
+        onClose={() => setConfirmModalVisible(false)}
+        onConfirm={handleConfirmArrivalSubmit}
       />
 
-      {/* Supervisor Confirm Attendance Modal */}
-      <ConfirmAttendanceModal
-        visible={Boolean(attendanceTrip)}
-        calendarDayId={attendanceTrip?.tripWorkCalendarId ?? null}
-        tripId={attendanceTrip?.tripId}
-        tripName={attendanceTrip?.tripName}
-        driverName={attendanceTrip?.driverFullName}
-        tripTime={
-          attendanceTrip?.outbound?.start
-            ? `${attendanceTrip.outbound.start.slice(0, 5)} تا ${
-                attendanceTrip.outbound.end?.slice(0, 5) || ''
-              }`
-            : undefined
-        }
-        onClose={() => setAttendanceTrip(null)}
-        onSuccess={() => {
-          setRefreshIndex((prev) => prev + 1);
-        }}
-      />
-
-      {/* Supervisor Assign Temporary Driver (لنگی) Modal */}
-      <AssignTempDriverModal
-        visible={Boolean(tempDriverTrip)}
-        calendarDayId={tempDriverTrip?.tripWorkCalendarId ?? null}
-        tripId={tempDriverTrip?.tripId}
-        tripName={tempDriverTrip?.tripName}
-        mainDriverName={tempDriverTrip?.driverFullName}
-        defaultPrice={
-          tempDriverTrip?.outbound?.price ??
-          tempDriverTrip?.inbound?.price ??
-          1000000
-        }
-        existingTempDriver={tempDriverTrip?.temporaryDriver}
-        onClose={() => setTempDriverTrip(null)}
-        onSuccess={() => {
-          setRefreshIndex((prev) => prev + 1);
-        }}
-      />
-
-      {/* SOS & Management Modals */}
-      <SosEmergencyModal
-        visible={sosModalVisible}
-        onClose={() => setSosModalVisible(false)}
-      />
-      <ManagementContactModal
-        visible={managementModalVisible}
-        onClose={() => setManagementModalVisible(false)}
+      {/* Modal 2: Langi Request / Edit Sheet */}
+      <LangiRequestModal
+        visible={langiModalVisible}
+        preselectedDriver={selectedDriverForLangi}
+        onClose={() => setLangiModalVisible(false)}
       />
     </View>
   );
@@ -1074,278 +518,163 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
-    gap: Spacing.md,
-  },
-  boardControlCard: {
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    padding: Spacing.md,
     gap: 12,
   },
-  boardCardHeader: {
-    flexDirection: 'row-reverse',
+  dailyBoardFilterCard: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    padding: 12,
+    gap: 10,
+  },
+  dailyBoardHeaderRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   boardTitleGroup: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    flex: 1,
+    gap: 6,
   },
-  iconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  boardTitleText: {
+    fontSize: 13,
   },
-  boardTitleTextCol: {
-    alignItems: 'flex-end',
-    flex: 1,
+  directionToggleGroup: {
+    flexDirection: 'row',
+    gap: 6,
   },
-  boardMainTitle: {
-    fontSize: 14.5,
-  },
-  boardSubTitle: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  refreshIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationSelectorBtn: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  locationSelectorRight: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  locationIdBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: BorderRadius.sm,
-  },
-  locationIdText: {
-    fontSize: 11,
-  },
-  locationTitleText: {
-    fontSize: 13.5,
-    textAlign: 'right',
-    flex: 1,
-  },
-  locationSelectorLeft: {
-    flexDirection: 'row-reverse',
+  dirBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
   },
-  changeLocationLabel: {
+  dirBtnText: {
+    fontSize: 11,
+  },
+  locationsChipsRow: {
+    flexDirection: 'row-reverse',
+    gap: 6,
+    paddingVertical: 2,
+  },
+  locChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  locChipText: {
+    fontSize: 11,
+  },
+  locationInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locIdLabel: {
     fontSize: 11.5,
   },
-  directionToggleRow: {
-    flexDirection: 'row-reverse',
-    gap: 8,
-  },
-  directionBtn: {
+  locIdInput: {
     flex: 1,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 9,
-    borderRadius: BorderRadius.md,
+    height: 36,
+    borderRadius: BorderRadius.sm,
     borderWidth: 1,
-  },
-  directionBtnText: {
-    fontSize: 12,
-  },
-  statsGrid: {
-    flexDirection: 'row-reverse',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  statCard: {
-    flex: 1,
-    minWidth: '22%',
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: BorderRadius.full,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 16,
-  },
-  statLabel: {
-    fontSize: 10,
+    paddingHorizontal: 10,
+    fontSize: 12.5,
     textAlign: 'center',
   },
-  quickRow: {
-    flexDirection: 'row-reverse',
-    gap: 8,
+  applyLocBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.sm,
   },
-  quickActionCard: {
-    flex: 1,
+  applyLocBtnText: {
+    fontSize: 11.5,
+    color: '#071318',
+  },
+  boardSummaryBar: {
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    padding: 8,
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  boardSummaryText: {
+    fontSize: 12,
+    textAlign: 'right',
+  },
+  boardCountsText: {
+    fontSize: 11,
+    textAlign: 'right',
+  },
+  searchBox: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: BorderRadius.lg,
+    gap: 8,
+    height: 44,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
+    paddingHorizontal: 12,
   },
-  quickActionText: {
-    fontSize: 11.5,
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    textAlign: 'right',
+    paddingVertical: 0,
   },
-  sectionHeaderRow: {
-    flexDirection: 'row-reverse',
+  sectionHeader: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  tabSwitchContainer: {
-    flexDirection: 'row-reverse',
-    gap: 8,
-    flex: 1,
-  },
-  sourceTabBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  sourceTabText: {
+  countSubtitle: {
     fontSize: 11.5,
   },
-  loadingBox: {
-    paddingVertical: Spacing.xl,
+  sectionTitleGroup: {
+    flexDirection: 'row-reverse',
     alignItems: 'center',
+    gap: 6,
+  },
+  accentBar: {
+    width: 3.5,
+    height: 17,
+    borderRadius: 2,
+  },
+  sectionTitle: {
+    fontSize: 14,
+  },
+  cardsList: {
+    gap: 10,
+  },
+  loadingState: {
+    paddingVertical: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
   },
   loadingText: {
     fontSize: 12,
   },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    padding: Spacing.md,
-  },
-  locationModalContainer: {
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    padding: Spacing.md,
-    gap: 12,
-  },
-  locationModalHeader: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  locationModalTitle: {
-    fontSize: 14.5,
-  },
-  closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: BorderRadius.full,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  manualIdBox: {
-    padding: 10,
+  emptyStateCard: {
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
+    padding: 22,
+    alignItems: 'center',
     gap: 8,
   },
-  manualIdLabel: {
-    fontSize: 11.5,
-    textAlign: 'right',
-  },
-  manualIdInputRow: {
-    flexDirection: 'row-reverse',
-    gap: 8,
-  },
-  manualIdInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  emptyStateTitle: {
+    fontSize: 13.5,
     textAlign: 'center',
-    fontSize: 13,
   },
-  applyIdBtn: {
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: BorderRadius.md,
-  },
-  applyIdBtnText: {
-    fontSize: 12,
-  },
-  searchLocationBox: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: 10,
-    height: 40,
-    gap: 8,
-  },
-  searchLocationInput: {
-    flex: 1,
-    textAlign: 'right',
-    fontSize: 12.5,
-  },
-  locationListItem: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    marginBottom: 6,
-  },
-  locationItemRight: {
-    alignItems: 'flex-end',
-    flex: 1,
-  },
-  locationItemTitle: {
-    fontSize: 13,
-  },
-  locationItemCompany: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  locationIdPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
+  emptyStateSubtitle: {
+    fontSize: 11.5,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

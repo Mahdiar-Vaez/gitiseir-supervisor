@@ -8,7 +8,7 @@ import {
   TextStyle,
   View,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { triggerImpactHaptic } from '@/utils/haptics';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, Spacing, BorderRadius, TouchTarget } from '@/constants/theme';
 import { LucideIcon } from 'lucide-react-native';
@@ -42,11 +42,7 @@ export function PrimaryButton({
 
   const handlePress = () => {
     if (disabled || loading) return;
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {
-      // Haptics optional on web/simulator
-    }
+    triggerImpactHaptic();
     onPress();
   };
 

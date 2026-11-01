@@ -8,14 +8,24 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Alert,
+  ScrollView,
 } from 'react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits } from '@/utils/persian-digits';
 import { confirmAttendanceApi } from '@/services/api/supervisor';
-import { X, CheckCircle2, UserCheck, FileText, Clock } from 'lucide-react-native';
+import { DayTripGridItem } from '@/services/api/types';
+import {
+  X,
+  CheckCircle2,
+  UserCheck,
+  FileText,
+  Clock,
+  CalendarCheck,
+  History,
+} from 'lucide-react-native';
 
 interface ConfirmAttendanceModalProps {
   visible: boolean;
@@ -24,6 +34,8 @@ interface ConfirmAttendanceModalProps {
   tripName?: string;
   driverName?: string;
   tripTime?: string;
+  selectedDateLabel?: string;
+  dayTrips?: DayTripGridItem[];
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -31,7 +43,8 @@ interface ConfirmAttendanceModalProps {
 const QUICK_NOTES = [
   'حضور به‌موقع در مبدأ سرویس',
   'تأیید حضور و آمادگی کامل خودرو',
-  'حضور با هماهنگی سرشوفر',
+  'تأیید سفر جامانده (فراموشی ثبت شروع/پایان توسط راننده)',
+  'حضور با هماهنگی سرشوفر خط',
 ];
 
 export function ConfirmAttendanceModal({
@@ -41,38 +54,88 @@ export function ConfirmAttendanceModal({
   tripName,
   driverName,
   tripTime,
+  selectedDateLabel,
+  dayTrips = [],
   onClose,
   onSuccess,
 }: ConfirmAttendanceModalProps) {
   const { colors, isDark } = useAppTheme();
   const { token } = useAuth();
+  const { showSuccess, showError } = useToast();
 
+  const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [note, setNote] = useState<string>('حضور به‌موقع در مبدأ سرویس');
+  const [isMissedTripMode, setIsMissedTripMode] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  if (!visible || !calendarDayId) return null;
+  const initFields = () => {
+    const initialId =
+      calendarDayId ||
+      (dayTrips.length > 0 ? dayTrips[0].tripWorkCalendarId : '');
+    setSelectedCalendarId(initialId);
+    setNote('حضور به‌موقع در مبدأ سرویس');
+    setIsMissedTripMode(false);
+  };
+
+  if (!visible) return null;
+
+  const activeTripObj = dayTrips.find(
+    (t) => t.tripWorkCalendarId === selectedCalendarId
+  );
+
+  const effectiveTripName =
+    activeTripObj?.tripName || tripName || 'سرویس انتخابی';
+  const effectiveTripId = activeTripObj?.tripId ?? tripId;
+  const effectiveDriverName = activeTripObj?.driverFullName || driverName;
+  const effectiveTripTime =
+    activeTripObj?.outbound?.start
+      ? `${activeTripObj.outbound.start.slice(0, 5)} تا ${
+          activeTripObj.outbound.end?.slice(0, 5) || ''
+        }`
+      : tripTime;
+
+  const handleToggleMissedMode = () => {
+    const next = !isMissedTripMode;
+    setIsMissedTripMode(next);
+    if (next) {
+      setNote('تأیید انجام سفر جامانده (راننده فراموش کرده در اپ ثبت کند)');
+    } else {
+      setNote('حضور به‌موقع در مبدأ سرویس');
+    }
+  };
 
   const handleSubmit = async () => {
-    if (!calendarDayId) return;
+    const targetId = selectedCalendarId.trim();
+    if (!targetId) {
+      showError(
+        'شناسه تقویم کاری مشخص نشده است. لطفاً یک سرویس را انتخاب نمایید.',
+        'خطای اعتبارسنجی'
+      );
+      return;
+    }
+
     try {
       setSubmitting(true);
       const res = await confirmAttendanceApi(
         {
-          calendarDayId,
+          calendarDayId: targetId,
           note: note.trim() || 'تأیید حضور توسط سرشوفر',
         },
         token
       );
-      Alert.alert(
-        'ثبت حضور موفق',
-        res?.message || 'حضور راننده برای این سرویس با موفقیت تأیید شد.'
+      showSuccess(
+        res?.message ||
+          (selectedDateLabel
+            ? `اختصاص و تأیید حضور سفر در روز ${selectedDateLabel} با موفقیت ثبت شد.`
+            : 'حضور راننده برای این سرویس با موفقیت تأیید شد.'),
+        'ثبت حضور موفق'
       );
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      Alert.alert(
-        'خطا در ثبت حضور',
-        err?.message || 'امکان ثبت حضور در حال حاضر وجود ندارد.'
+      showError(
+        err?.message || 'امکان ثبت حضور در حال حاضر وجود ندارد.',
+        'خطا در تأیید حضور'
       );
     } finally {
       setSubmitting(false);
@@ -84,7 +147,7 @@ export function ConfirmAttendanceModal({
       visible={visible}
       transparent
       animationType="fade"
-      onShow={() => setNote('حضور به‌موقع در مبدأ سرویس')}
+      onShow={initFields}
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
@@ -122,7 +185,9 @@ export function ConfirmAttendanceModal({
                     { color: colors.text, fontFamily: Typography.fontFamily.bold },
                   ]}
                 >
-                  تأیید حضور راننده
+                  {selectedDateLabel
+                    ? `اختصاص سفر به روز ${selectedDateLabel}`
+                    : 'تأیید حضور راننده'}
                 </Text>
                 <Text
                   style={[
@@ -130,7 +195,7 @@ export function ConfirmAttendanceModal({
                     { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                   ]}
                 >
-                  ثبت در بورد نظارتی سرشوفر
+                  ثبت و مدیریت حضور راننده در سامانه ناوگان
                 </Text>
               </View>
               <View
@@ -144,45 +209,86 @@ export function ConfirmAttendanceModal({
             </View>
           </View>
 
-          {/* Trip Summary Box */}
-          <View
-            style={[
-              styles.infoBox,
-              {
-                backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
-                borderColor: colors.border,
-              },
-            ]}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollBody}
           >
-            <View style={styles.infoRow}>
-              <Text
-                style={[
-                  styles.infoValue,
-                  { color: colors.gold, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                {tripName || 'سرویس انتخابی'}
-                {tripId ? ` (${toPersianDigits(tripId)})` : ''}
-              </Text>
-              <Text
-                style={[
-                  styles.infoLabel,
-                  { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
-                ]}
-              >
-                نام سرویس:
-              </Text>
-            </View>
+            {/* Day Trips Picker (if opened from calendar day header) */}
+            {dayTrips.length > 0 ? (
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <CalendarCheck size={14} color={colors.gold} />
+                  <Text
+                    style={[
+                      styles.fieldLabel,
+                      { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                    ]}
+                  >
+                    انتخاب سرویس این روز ({toPersianDigits(dayTrips.length)} مورد):
+                  </Text>
+                </View>
+                <View style={styles.tripSelectorList}>
+                  {dayTrips.map((t) => {
+                    const isSelected =
+                      t.tripWorkCalendarId === selectedCalendarId;
+                    return (
+                      <TouchableOpacity
+                        key={t.tripWorkCalendarId}
+                        onPress={() =>
+                          setSelectedCalendarId(t.tripWorkCalendarId)
+                        }
+                        style={[
+                          styles.tripOptionBtn,
+                          {
+                            backgroundColor: isSelected
+                              ? colors.goldBg
+                              : isDark
+                              ? '#0B0F19'
+                              : '#F8FAFC',
+                            borderColor: isSelected ? colors.gold : colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.tripOptionTitle,
+                            {
+                              color: isSelected ? colors.gold : colors.text,
+                              fontFamily: isSelected
+                                ? Typography.fontFamily.bold
+                                : Typography.fontFamily.medium,
+                            },
+                          ]}
+                        >
+                          {t.tripName} ({toPersianDigits(t.driverFullName || 'بدون راننده')})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
-            {driverName ? (
+            {/* Trip Summary Box */}
+            <View
+              style={[
+                styles.infoBox,
+                {
+                  backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
               <View style={styles.infoRow}>
                 <Text
                   style={[
                     styles.infoValue,
-                    { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                    { color: colors.gold, fontFamily: Typography.fontFamily.bold },
                   ]}
                 >
-                  {driverName}
+                  {effectiveTripName}
+                  {effectiveTripId ? ` (${toPersianDigits(effectiveTripId)})` : ''}
                 </Text>
                 <Text
                   style={[
@@ -190,105 +296,190 @@ export function ConfirmAttendanceModal({
                     { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                   ]}
                 >
-                  راننده:
+                  نام سرویس:
                 </Text>
               </View>
-            ) : null}
 
-            {tripTime ? (
-              <View style={styles.infoRow}>
-                <View style={styles.timeRow}>
-                  <Clock size={12} color={colors.gold} />
+              {effectiveDriverName ? (
+                <View style={styles.infoRow}>
                   <Text
                     style={[
                       styles.infoValue,
-                      { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+                      { color: colors.text, fontFamily: Typography.fontFamily.bold },
                     ]}
                   >
-                    {toPersianDigits(tripTime)}
+                    {effectiveDriverName}
                   </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.infoLabel,
-                    { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
-                  ]}
-                >
-                  ساعت سرویس:
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Quick Note Chips */}
-          <View style={styles.quickNotesWrap}>
-            {QUICK_NOTES.map((item) => {
-              const active = note === item;
-              return (
-                <TouchableOpacity
-                  key={item}
-                  onPress={() => setNote(item)}
-                  style={[
-                    styles.quickChip,
-                    {
-                      backgroundColor: active
-                        ? colors.goldBg
-                        : isDark
-                        ? '#1E293B'
-                        : '#F1F5F9',
-                      borderColor: active ? colors.gold : colors.border,
-                    },
-                  ]}
-                >
                   <Text
                     style={[
-                      styles.quickChipText,
+                      styles.infoLabel,
+                      { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+                    ]}
+                  >
+                    راننده:
+                  </Text>
+                </View>
+              ) : null}
+
+              {effectiveTripTime ? (
+                <View style={styles.infoRow}>
+                  <View style={styles.timeRow}>
+                    <Clock size={12} color={colors.gold} />
+                    <Text
+                      style={[
+                        styles.infoValue,
+                        { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+                      ]}
+                    >
+                      {toPersianDigits(effectiveTripTime)}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.infoLabel,
+                      { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+                    ]}
+                  >
+                    ساعت سرویس:
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Manual CalendarDayId Input (when day has no preloaded trips or supervisor wants to enter UUID) */}
+            {!calendarDayId && dayTrips.length === 0 ? (
+              <View style={styles.fieldGroup}>
+                <Text
+                  style={[
+                    styles.fieldLabel,
+                    { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                  ]}
+                >
+                  شناسه تقویم کاری سرویس:
+                </Text>
+                <TextInput
+                  value={selectedCalendarId}
+                  onChangeText={setSelectedCalendarId}
+                  placeholder="کد شناسه سرویس در تقویم"
+                  placeholderTextColor={colors.textMuted}
+                  style={[
+                    styles.singleLineInput,
+                    {
+                      backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
+                      borderColor: colors.border,
+                      color: colors.text,
+                      fontFamily: Typography.fontFamily.regular,
+                    },
+                  ]}
+                />
+              </View>
+            ) : null}
+
+            {/* US-05 Missed Trip Toggle */}
+            <TouchableOpacity
+              onPress={handleToggleMissedMode}
+              activeOpacity={0.8}
+              style={[
+                styles.missedTripToggle,
+                {
+                  backgroundColor: isMissedTripMode
+                    ? 'rgba(245, 158, 11, 0.14)'
+                    : isDark
+                    ? '#1E293B'
+                    : '#F1F5F9',
+                  borderColor: isMissedTripMode ? '#F59E0B' : colors.border,
+                },
+              ]}
+            >
+              <History
+                size={16}
+                color={isMissedTripMode ? '#F59E0B' : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.missedTripText,
+                  {
+                    color: isMissedTripMode ? '#F59E0B' : colors.textSecondary,
+                    fontFamily: isMissedTripMode
+                      ? Typography.fontFamily.bold
+                      : Typography.fontFamily.medium,
+                  },
+                ]}
+              >
+                ثبت به عنوان سفر جامانده (فراموشی ثبت توسط راننده)
+              </Text>
+            </TouchableOpacity>
+
+            {/* Quick Note Chips */}
+            <View style={styles.quickNotesWrap}>
+              {QUICK_NOTES.map((item) => {
+                const active = note === item;
+                return (
+                  <TouchableOpacity
+                    key={item}
+                    onPress={() => setNote(item)}
+                    style={[
+                      styles.quickChip,
                       {
-                        color: active ? colors.gold : colors.textSecondary,
-                        fontFamily: active
-                          ? Typography.fontFamily.bold
-                          : Typography.fontFamily.regular,
+                        backgroundColor: active
+                          ? colors.goldBg
+                          : isDark
+                          ? '#1E293B'
+                          : '#F1F5F9',
+                        borderColor: active ? colors.gold : colors.border,
                       },
                     ]}
                   >
-                    {item}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Note Input */}
-          <View style={styles.fieldGroup}>
-            <View style={styles.labelRow}>
-              <FileText size={14} color={colors.gold} />
-              <Text
-                style={[
-                  styles.fieldLabel,
-                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                یادداشت سرشوفر (Note)
-              </Text>
+                    <Text
+                      style={[
+                        styles.quickChipText,
+                        {
+                          color: active ? colors.gold : colors.textSecondary,
+                          fontFamily: active
+                            ? Typography.fontFamily.bold
+                            : Typography.fontFamily.regular,
+                        },
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              placeholder="توضیحات حضور راننده را وارد کنید..."
-              placeholderTextColor={colors.textMuted}
-              multiline
-              numberOfLines={3}
-              style={[
-                styles.input,
-                {
-                  backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
-                  borderColor: colors.border,
-                  color: colors.text,
-                  fontFamily: Typography.fontFamily.regular,
-                },
-              ]}
-            />
-          </View>
+
+            {/* Note Input */}
+            <View style={styles.fieldGroup}>
+              <View style={styles.labelRow}>
+                <FileText size={14} color={colors.gold} />
+                <Text
+                  style={[
+                    styles.fieldLabel,
+                    { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                  ]}
+                >
+                  یادداشت سرشوفر (note)
+                </Text>
+              </View>
+              <TextInput
+                value={note}
+                onChangeText={setNote}
+                placeholder="توضیحات حضور راننده یا علت ثبت سفر را وارد کنید..."
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={3}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
+                    borderColor: colors.border,
+                    color: colors.text,
+                    fontFamily: Typography.fontFamily.regular,
+                  },
+                ]}
+              />
+            </View>
+          </ScrollView>
 
           {/* Actions */}
           <View style={styles.footer}>
@@ -315,7 +506,9 @@ export function ConfirmAttendanceModal({
                       { fontFamily: Typography.fontFamily.bold },
                     ]}
                   >
-                    ثبت و تأیید حضور
+                    {selectedDateLabel
+                      ? `ثبت برای روز ${selectedDateLabel}`
+                      : 'ثبت و تأیید حضور'}
                   </Text>
                 </>
               )}
@@ -365,7 +558,8 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 430,
+    maxWidth: 440,
+    maxHeight: '88%',
     borderRadius: BorderRadius.xl,
     borderWidth: 1.5,
     padding: Spacing.md,
@@ -393,10 +587,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   title: {
-    fontSize: 15,
+    fontSize: 14.5,
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     marginTop: 1,
   },
   iconBadge: {
@@ -405,6 +599,24 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  scrollBody: {
+    gap: 10,
+    paddingVertical: 2,
+  },
+  tripSelectorList: {
+    gap: 6,
+  },
+  tripOptionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'flex-end',
+  },
+  tripOptionTitle: {
+    fontSize: 12,
+    textAlign: 'right',
   },
   infoBox: {
     borderRadius: BorderRadius.md,
@@ -427,6 +639,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+  },
+  missedTripToggle: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  missedTripText: {
+    fontSize: 11.5,
+    textAlign: 'right',
+    flex: 1,
   },
   quickNotesWrap: {
     flexDirection: 'row-reverse',
@@ -452,6 +678,15 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     fontSize: 12,
+    textAlign: 'right',
+  },
+  singleLineInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: 12,
+    height: 40,
+    fontSize: 12,
+    textAlign: 'right',
   },
   input: {
     borderWidth: 1,
@@ -479,7 +714,7 @@ const styles = StyleSheet.create({
   },
   submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12.5,
   },
   cancelBtn: {
     flex: 1,

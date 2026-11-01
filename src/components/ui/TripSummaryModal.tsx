@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits } from '@/utils/persian-digits';
 import { TripSummary, TodayTrip, ActiveTrip } from '@/services/api/types';
@@ -93,18 +94,22 @@ export function TripSummaryModal({
 }: TripSummaryModalProps) {
   const { colors, isDark } = useAppTheme();
   const { token } = useAuth();
+  const { showError } = useToast();
 
   const [currentTripId, setCurrentTripId] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [summary, setSummary] = useState<TripSummary | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   if (visible && tripId !== currentTripId) {
     setCurrentTripId(tripId);
     setLoading(true);
     setSummary(null);
+    setApiError(null);
   } else if (!visible && currentTripId !== null) {
     setCurrentTripId(null);
     setSummary(null);
+    setApiError(null);
   }
 
   useEffect(() => {
@@ -112,8 +117,19 @@ export function TripSummaryModal({
     if (visible && tripId) {
       getTripSummaryApi(tripId, token)
         .then((res) => {
-          if (!isCancelled && res && res.result) {
-            setSummary(res.result);
+          if (!isCancelled) {
+            if (res && res.result && typeof res.result === 'object' && 'id' in res.result) {
+              setSummary(res.result);
+            } else {
+              setSummary(null);
+            }
+          }
+        })
+        .catch((err: any) => {
+          if (!isCancelled) {
+            const msg = err?.message || 'خطا در دریافت خلاصه اطلاعات سفر از سرور.';
+            setApiError(msg);
+            showError(msg, 'خطای دریافت جزئیات سفر');
           }
         })
         .finally(() => {
@@ -125,17 +141,18 @@ export function TripSummaryModal({
     return () => {
       isCancelled = true;
     };
-  }, [visible, tripId, token]);
+  }, [visible, tripId, token, showError]);
 
   if (!visible) return null;
 
   // Title: prioritize clicked card title, then summary, then default
   const tripName =
-    (initialTrip && ('tripName' in initialTrip && initialTrip.tripName
-      ? initialTrip.tripName
-      : 'name' in initialTrip && initialTrip.name
-      ? initialTrip.name
-      : undefined)) ||
+    (initialTrip &&
+      ('tripName' in initialTrip && initialTrip.tripName
+        ? initialTrip.tripName
+        : 'name' in initialTrip && initialTrip.name
+        ? initialTrip.name
+        : undefined)) ||
     summary?.name ||
     'جزئیات سفر';
 
@@ -148,7 +165,7 @@ export function TripSummaryModal({
   const isInProgress = effectiveStatus === 2;
   const isCompleted = effectiveStatus === 3;
 
-  // Timings: strictly prioritize initialTrip (the clicked card), then summary, then default
+  // Timings: strictly prioritize initialTrip (the clicked card), then summary
   const initialStart =
     initialTrip && 'scheduledStartTime' in initialTrip && initialTrip.scheduledStartTime
       ? initialTrip.scheduledStartTime
@@ -167,39 +184,50 @@ export function TripSummaryModal({
       ? initialTrip.outbound.end
       : null;
 
-  const rawStart = initialStart || summary?.outboundStart || '۰۰:۰۰';
-  const rawEnd = initialEnd || summary?.outboundEnd || '۰۰:۰۰';
+  const rawStart = initialStart || summary?.outboundStart || '';
+  const rawEnd = initialEnd || summary?.outboundEnd || '';
 
-  const startTime = rawStart ? rawStart.slice(0, 5) : '۰۰:۰۰';
-  const endTime = rawEnd ? rawEnd.slice(0, 5) : '۰۰:۰۰';
+  const startTime = rawStart ? rawStart.slice(0, 5) : '---';
+  const endTime = rawEnd ? rawEnd.slice(0, 5) : '---';
 
-  // Price / Fare
+  // Price / Fare (Real data only - 0 if not returned)
   const farePrice =
-    initialTrip && 'outboundPrice' in initialTrip && typeof initialTrip.outboundPrice === 'number' && initialTrip.outboundPrice > 0
+    initialTrip &&
+    'outboundPrice' in initialTrip &&
+    typeof initialTrip.outboundPrice === 'number' &&
+    initialTrip.outboundPrice > 0
       ? initialTrip.outboundPrice
-      : initialTrip && 'outbound' in initialTrip && typeof initialTrip.outbound?.price === 'number' && initialTrip.outbound.price > 0
+      : initialTrip &&
+        'outbound' in initialTrip &&
+        typeof initialTrip.outbound?.price === 'number' &&
+        initialTrip.outbound.price > 0
       ? initialTrip.outbound.price
-      : summary?.outboundPrice || 2455555;
+      : summary?.outboundPrice ?? 0;
 
-  // Station counts:
+  // Station counts (Real data only)
   const initialTotal =
-    initialTrip && 'totalStations' in initialTrip && typeof initialTrip.totalStations === 'number' && initialTrip.totalStations > 0
+    initialTrip &&
+    'totalStations' in initialTrip &&
+    typeof initialTrip.totalStations === 'number'
       ? initialTrip.totalStations
       : undefined;
 
   const initialVisited =
-    initialTrip && 'visitedStations' in initialTrip && typeof initialTrip.visitedStations === 'number'
+    initialTrip &&
+    'visitedStations' in initialTrip &&
+    typeof initialTrip.visitedStations === 'number'
       ? initialTrip.visitedStations
       : undefined;
 
   const totalStations =
     initialTotal ??
-    (typeof summary?.totalStations === 'number' && summary.totalStations > 0 ? summary.totalStations : 6);
+    (typeof summary?.totalStations === 'number' ? summary.totalStations : 0);
 
   const visitedStations = isCompleted
     ? totalStations
     : isInProgress
-    ? (initialVisited ?? (typeof summary?.visitedStations === 'number' ? summary.visitedStations : 0))
+    ? (initialVisited ??
+      (typeof summary?.visitedStations === 'number' ? summary.visitedStations : 0))
     : 0;
 
   const remainingStations = isCompleted
@@ -209,22 +237,23 @@ export function TripSummaryModal({
     : totalStations;
 
   const nextStation = isInProgress
-    ? (summary?.nextStation || (initialTrip && 'nextStation' in initialTrip ? initialTrip.nextStation : null))
+    ? summary?.nextStation ||
+      (initialTrip && 'nextStation' in initialTrip ? initialTrip.nextStation : null)
     : null;
 
-  // Passenger counts:
-  const totalExpectedPassengers = summary?.totalExpectedPassengers ?? 18;
+  // Passenger counts (Real data only)
+  const totalExpectedPassengers = summary?.totalExpectedPassengers ?? 0;
   const processedPassengers = isCompleted
     ? totalExpectedPassengers
     : isInProgress
-    ? (summary?.processedPassengers ?? 14)
+    ? (summary?.processedPassengers ?? 0)
     : 0;
 
-  // License plate:
+  // License plate (Real data only)
   const licensePlate =
-    (initialTrip && 'licensePlate' in initialTrip && initialTrip.licensePlate)
+    initialTrip && 'licensePlate' in initialTrip && initialTrip.licensePlate
       ? initialTrip.licensePlate
-      : summary?.licensePlate || 'تخصیص یافته';
+      : summary?.licensePlate || 'ثبت نشده';
 
   return (
     <Modal
@@ -297,7 +326,7 @@ export function TripSummaryModal({
                   { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                در حال بارگذاری اطلاعات سفر...
+                در حال بارگذاری اطلاعات سفر از سرور...
               </Text>
             </View>
           ) : summary || initialTrip ? (
@@ -305,6 +334,19 @@ export function TripSummaryModal({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
             >
+              {apiError ? (
+                <View style={styles.apiWarningBanner}>
+                  <Text
+                    style={[
+                      styles.apiWarningText,
+                      { fontFamily: Typography.fontFamily.regular },
+                    ]}
+                  >
+                    اطلاعات تکمیلی سرور: {apiError} (نمایش اطلاعات ثبت‌شده در لیست)
+                  </Text>
+                </View>
+              ) : null}
+
               {/* Row 1: Timing & Fare */}
               <View style={styles.statGrid}>
                 {/* Outbound Time */}
@@ -355,7 +397,9 @@ export function TripSummaryModal({
                       { color: colors.gold, fontFamily: Typography.fontFamily.bold },
                     ]}
                   >
-                    {formatNumberWithCommas(farePrice)} ریال
+                    {farePrice > 0
+                      ? `${formatNumberWithCommas(farePrice)} ریال`
+                      : 'ثبت نشده'}
                   </Text>
                 </View>
               </View>
@@ -480,9 +524,11 @@ export function TripSummaryModal({
                       { color: colors.text, fontFamily: Typography.fontFamily.bold },
                     ]}
                   >
-                    {toPersianDigits(
-                      `${processedPassengers} از ${totalExpectedPassengers}`
-                    )}
+                    {totalExpectedPassengers > 0
+                      ? toPersianDigits(
+                          `${processedPassengers} از ${totalExpectedPassengers}`
+                        )
+                      : 'ثبت نشده'}
                   </Text>
                 </View>
 
@@ -522,7 +568,7 @@ export function TripSummaryModal({
                   { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                اطلاعاتی برای این سفر یافت نشد.
+                {apiError || 'اطلاعاتی برای این سفر در سرور یافت نشد.'}
               </Text>
             </View>
           )}
@@ -698,6 +744,19 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
+    textAlign: 'center',
+  },
+  apiWarningBanner: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: 8,
+  },
+  apiWarningText: {
+    color: '#F59E0B',
+    fontSize: 11,
+    textAlign: 'right',
   },
   scrollContent: {
     paddingVertical: Spacing.xs,

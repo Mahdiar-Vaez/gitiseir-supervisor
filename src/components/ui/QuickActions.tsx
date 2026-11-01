@@ -8,7 +8,7 @@ import {
   Linking,
   ScrollView,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { triggerImpactHaptic, triggerNotificationHaptic } from '@/utils/haptics';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits } from '@/utils/persian-digits';
@@ -72,11 +72,7 @@ export function QuickActions() {
   const [activeModal, setActiveModal] = useState<QuickActionType | null>(null);
 
   const handlePress = (id: QuickActionType) => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
-      // Haptics optional
-    }
+    triggerImpactHaptic();
     setActiveModal(id);
   };
 
@@ -560,7 +556,7 @@ export function QuickActions() {
                   <View style={styles.emergencyOptions}>
                     <Pressable
                       onPress={() => {
-                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        triggerNotificationHaptic('success');
                         closeModal();
                       }}
                       style={[

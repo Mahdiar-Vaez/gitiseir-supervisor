@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { triggerImpactHaptic, triggerNotificationHaptic } from '@/utils/haptics';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits } from '@/utils/persian-digits';
@@ -54,21 +54,13 @@ export function QuickAccessGrid({
   const [supportConfirmed, setSupportConfirmed] = useState(false);
 
   const handleSupportPress = () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {
-      // Haptics optional
-    }
+    triggerImpactHaptic();
     setSupportConfirmed(false);
     setSupportModalVisible(true);
   };
 
   const handleConfirmSupport = () => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      // Haptics optional
-    }
+    triggerNotificationHaptic('success');
     setSupportConfirmed(true);
     setTimeout(() => {
       setSupportModalVisible(false);
@@ -86,7 +78,7 @@ export function QuickAccessGrid({
       icon: Calendar,
       bgColor: '#F59E0B', // Warm Amber / Gold
       action: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        triggerImpactHaptic();
         router.navigate('/calendar' as any);
       },
     },
@@ -96,7 +88,7 @@ export function QuickAccessGrid({
       icon: User,
       bgColor: '#3B82F6', // Vibrant Blue
       action: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        triggerImpactHaptic();
         router.navigate('/profile' as any);
       },
     },
@@ -106,7 +98,7 @@ export function QuickAccessGrid({
       icon: ShieldCheck,
       bgColor: '#8B5CF6', // Purple
       action: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        triggerImpactHaptic();
         if (onOpenManagement) onOpenManagement();
       },
     },
@@ -116,7 +108,7 @@ export function QuickAccessGrid({
       icon: Radio,
       bgColor: '#EF4444', // Red Alert
       action: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        triggerImpactHaptic();
         if (onOpenSos) onOpenSos();
       },
     },
@@ -126,7 +118,7 @@ export function QuickAccessGrid({
       icon: FileText,
       bgColor: '#06B6D4', // Cyan / Teal
       action: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        triggerImpactHaptic();
         router.navigate('/profile' as any);
       },
     },
@@ -136,7 +128,7 @@ export function QuickAccessGrid({
       icon: Clock,
       bgColor: '#F97316', // Orange
       action: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        triggerImpactHaptic();
         onScrollToSchedule?.();
       },
     },
@@ -153,7 +145,7 @@ export function QuickAccessGrid({
       icon: BarChart3,
       bgColor: '#10B981', // Emerald / Teal
       action: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        triggerImpactHaptic();
         if (onOpenRatings) {
           onOpenRatings();
         } else {

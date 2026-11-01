@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar, User, LucideIcon } from 'lucide-react-native';
+import { Users, CalendarDays, Repeat, ShieldUser, LucideIcon } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
+import { useSarshoofer } from '@/context/SarshooferContext';
 import { Typography, BorderRadius, TouchTarget } from '@/constants/theme';
+import { toPersianDigits } from '@/utils/persian-digits';
 
-export type TabRoute = 'home' | 'calendar' | 'profile';
+export type TabRoute = 'drivers' | 'calendar' | 'langi' | 'profile';
 
 interface CustomBottomTabBarProps {
   activeTab: TabRoute;
@@ -19,13 +21,15 @@ interface TabItemConfig {
 }
 
 const TABS: TabItemConfig[] = [
-  { id: 'home', label: 'خانه', icon: Home },
-  { id: 'calendar', label: 'تقویم کاری', icon: Calendar },
-  { id: 'profile', label: 'کارت راننده', icon: User },
+  { id: 'drivers', label: 'رانندگان امروز', icon: Users },
+  { id: 'calendar', label: 'تقویم کاری', icon: CalendarDays },
+  { id: 'langi', label: 'درخواست لنگی', icon: Repeat },
+  { id: 'profile', label: 'کارت سرشوفر', icon: ShieldUser },
 ];
 
 export function CustomBottomTabBar({ activeTab, onTabChange }: CustomBottomTabBarProps) {
   const { colors } = useAppTheme();
+  const { stats } = useSarshoofer();
   const insets = useSafeAreaInsets();
 
   return (
@@ -43,6 +47,18 @@ export function CustomBottomTabBar({ activeTab, onTabChange }: CustomBottomTabBa
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
+          const activeAccent =
+            tab.id === 'langi'
+              ? colors.langi
+              : tab.id === 'calendar'
+              ? colors.gold
+              : colors.command;
+          const activeBg =
+            tab.id === 'langi'
+              ? colors.langiBg
+              : tab.id === 'calendar'
+              ? colors.goldBg
+              : colors.commandBg;
 
           return (
             <Pressable
@@ -58,36 +74,46 @@ export function CustomBottomTabBar({ activeTab, onTabChange }: CustomBottomTabBa
                 },
               ]}
             >
-              {/* Active top gold line indicator */}
               {isActive && (
                 <View
                   style={[
                     styles.activeTopLine,
                     {
-                      backgroundColor: colors.gold,
-                      shadowColor: colors.gold,
+                      backgroundColor: activeAccent,
+                      shadowColor: activeAccent,
                     },
                   ]}
                 />
               )}
 
-              {/* Icon with soft gold pill background when active */}
               <View
                 style={[
                   styles.iconWrapper,
                   isActive && {
-                    backgroundColor: colors.goldBg,
+                    backgroundColor: activeBg,
                   },
                 ]}
               >
                 <Icon
                   size={19}
-                  color={isActive ? colors.gold : colors.textMuted}
+                  color={isActive ? activeAccent : colors.textMuted}
                   strokeWidth={isActive ? 2.2 : 1.7}
                 />
+
+                {tab.id === 'langi' && stats.langiCount > 0 && (
+                  <View
+                    style={[
+                      styles.tabBadge,
+                      { backgroundColor: colors.langi, borderColor: colors.card },
+                    ]}
+                  >
+                    <Text style={styles.tabBadgeText}>
+                      {toPersianDigits(stats.langiCount)}
+                    </Text>
+                  </View>
+                )}
               </View>
 
-              {/* Label - strictly single line, fixed height, identical baseline */}
               <View style={styles.labelContainer}>
                 <Text
                   numberOfLines={1}
@@ -95,7 +121,7 @@ export function CustomBottomTabBar({ activeTab, onTabChange }: CustomBottomTabBa
                   style={[
                     styles.label,
                     {
-                      color: isActive ? colors.gold : colors.textMuted,
+                      color: isActive ? activeAccent : colors.textMuted,
                       fontFamily: isActive
                         ? Typography.fontFamily.bold
                         : Typography.fontFamily.medium,
@@ -117,18 +143,17 @@ export function CustomBottomTabBar({ activeTab, onTabChange }: CustomBottomTabBa
 const styles = StyleSheet.create({
   container: {
     borderTopWidth: 1,
-    marginTop: 10,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.14,
     shadowRadius: 8,
     elevation: 6,
   },
   tabsRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-around',
     alignItems: 'center',
-    height: 52,
+    height: 54,
     paddingTop: 4,
   },
   tabItem: {
@@ -142,7 +167,7 @@ const styles = StyleSheet.create({
   activeTopLine: {
     position: 'absolute',
     top: -4,
-    width: 28,
+    width: 32,
     height: 2.5,
     borderRadius: 2,
     shadowOffset: { width: 0, height: 1 },
@@ -150,12 +175,30 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   iconWrapper: {
-    width: 38,
+    width: 42,
     height: 26,
     borderRadius: BorderRadius.sm,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 2,
+    position: 'relative',
+  },
+  tabBadge: {
+    position: 'absolute',
+    top: -3,
+    left: 2,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 7.5,
+    paddingHorizontal: 3,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabBadgeText: {
+    color: '#071318',
+    fontSize: 8.5,
+    fontWeight: 'bold',
   },
   labelContainer: {
     height: 16,

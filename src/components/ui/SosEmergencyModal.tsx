@@ -43,7 +43,7 @@ export function SosEmergencyModal({
 
   const handleCall = (phoneNumber: string) => {
     Linking.openURL(`tel:${phoneNumber}`).catch((err) => {
-      console.warn('[SOS] Could not open phone dialer:', err?.message);
+      console.log('[SOS] Could not open phone dialer:', err?.message);
     });
   };
 

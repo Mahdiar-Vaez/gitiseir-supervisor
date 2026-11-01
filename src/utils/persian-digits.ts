@@ -1,23 +1,15 @@
 /**
- * Utility functions for Persian digits and text formatting
+ * Utility functions for Persian digits and currency/number formatting
  */
 
 const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 
-/**
- * Converts English/Latin digits in any string or number to Persian digits.
- * Example: toPersianDigits("08:30") -> "۰۸:۳۰"
- * Example: toPersianDigits(1403) -> "۱۴۰۳"
- */
 export function toPersianDigits(input: string | number | null | undefined): string {
   if (input === null || input === undefined) return '';
   const str = input.toString();
   return str.replace(/[0-9]/g, (w) => PERSIAN_DIGITS[+w]);
 }
 
-/**
- * Converts Persian or Arabic digits in any string or number to English/Latin digits.
- */
 export function toEnglishDigits(input: string | number | null | undefined): string {
   if (input === null || input === undefined) return '';
   return input
@@ -26,26 +18,29 @@ export function toEnglishDigits(input: string | number | null | undefined): stri
     .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 }
 
-/**
- * Formats a distance number with Persian unit
- * Example: formatDistance(320) -> "۳۲۰ کیلومتر"
- */
+export function formatNumberWithCommas(num: number | string | null | undefined): string {
+  if (num === null || num === undefined || num === '') return '۰';
+  const cleaned = String(num).replace(/[^0-9]/g, '');
+  if (!cleaned) return '۰';
+  const withCommas = Number(cleaned).toLocaleString('en-US');
+  return toPersianDigits(withCommas);
+}
+
+export function format4DigitGroups(input: string | null | undefined): string {
+  if (!input) return '';
+  const digits = input.replace(/\D/g, '');
+  const grouped = digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  return toPersianDigits(grouped);
+}
+
 export function formatDistance(km: number | string): string {
   return `${toPersianDigits(km)} کیلومتر`;
 }
 
-/**
- * Formats a time string in Persian
- * Example: formatTime("08:00") -> "۰۸:۰۰"
- */
 export function formatTime(timeStr: string): string {
   return toPersianDigits(timeStr);
 }
 
-/**
- * Formats a rating score out of 100
- * Example: formatScore(94) -> "۹۴ از ۱۰۰"
- */
 export function formatScore(score: number): string {
   return `${toPersianDigits(score)} / ${toPersianDigits(100)}`;
 }

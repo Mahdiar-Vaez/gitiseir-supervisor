@@ -29,6 +29,7 @@ import {
 
 import { useAppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { useOtpTimer } from '@/hooks/useOtpTimer';
 import {
   normalizeDigits,
@@ -36,10 +37,12 @@ import {
   isValidIranMobile,
 } from '@/utils/security';
 import { toPersianDigits } from '@/utils/persian-digits';
+import { triggerNotificationHaptic } from '@/utils/haptics';
 
 export default function LoginScreen() {
   const { colors, isDark, toggleTheme } = useAppTheme();
   const { sendOtp, login } = useAuth();
+  const { showSuccess, showError } = useToast();
 
   // Step 1: 'mobile', Step 2: 'otp'
   const [step, setStep] = useState<'mobile' | 'otp'>('mobile');
@@ -49,14 +52,12 @@ export default function LoginScreen() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Keyboard and focus tracking for auto-avoiding keyboard overlap
   const [keyboardVisible, setKeyboardVisible] = useState<boolean>(false);
   const [isInputFocused, setIsInputFocused] = useState<boolean>(false);
 
   const otpInputRef = useRef<any>(null);
   const scrollViewRef = useRef<any>(null);
 
-  // Track native keyboard show/hide events
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -72,7 +73,6 @@ export default function LoginScreen() {
 
   const isKeyboardOpen = keyboardVisible || isInputFocused;
 
-  // Cooldown and anti-brute force timer hook
   const {
     formattedTime,
     canResend,
@@ -83,7 +83,6 @@ export default function LoginScreen() {
     resetLockout,
   } = useOtpTimer(normalizeIranMobile(mobileInput));
 
-  // Clear messages on input change
   const handleMobileChange = (val: string) => {
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -95,7 +94,6 @@ export default function LoginScreen() {
     const cleaned = normalizeDigits(val).replace(/\D/g, '').slice(0, 6);
     setOtpInput(cleaned);
 
-    // Auto-submit when user reaches 6 digits or SMS autofills
     if (cleaned.length === 6 && !isSubmitting && !isLocked) {
       setTimeout(() => {
         handleVerifyOtp(cleaned);
@@ -103,14 +101,13 @@ export default function LoginScreen() {
     }
   };
 
-  // Step 1: Submit Mobile Number
   const handleRequestOtp = async () => {
     if (isSubmitting) return;
 
     const normalized = normalizeIranMobile(mobileInput);
     if (!isValidIranMobile(normalized)) {
       setErrorMessage('لطفاً شماره تلفن همراه معتبر وارد کنید (مثال: ۰۹۱۲۳۴۵۶۷۸۹)');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      triggerNotificationHaptic(Haptics.NotificationFeedbackType.Warning);
       return;
     }
 
@@ -129,35 +126,39 @@ export default function LoginScreen() {
       const res = await sendOtp(normalized);
       if (res.success) {
         setSuccessMessage(res.message);
-        startCooldown(120); // 120s cooldown
+        showSuccess('ارسال کد تایید', res.message || 'کد تایید پیامک شد.');
+        startCooldown(120);
         setStep('otp');
         setOtpInput('');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        // Focus OTP field and scroll into view smoothly
+        triggerNotificationHaptic(Haptics.NotificationFeedbackType.Success);
         setTimeout(() => {
           otpInputRef.current?.focus();
           scrollViewRef.current?.scrollTo({ y: 70, animated: true });
         }, 300);
       } else {
-        setErrorMessage(res.message || 'خطا در ارسال کد تایید.');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        const msg = res.message || 'خطا در ارسال کد تایید.';
+        setErrorMessage(msg);
+        showError('خطا در ارسال کد تایید', msg);
+        triggerNotificationHaptic(Haptics.NotificationFeedbackType.Error);
       }
-    } catch {
-      setErrorMessage('خطای ارتباط با سرور. لطفاً اتصال اینترنت را بررسی کنید.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } catch (err: any) {
+      const msg = err?.message || 'خطای ارتباط با سرور. لطفاً اتصال اینترنت را بررسی کنید.';
+      setErrorMessage(msg);
+      showError('خطای ارسال کد تایید', err);
+      triggerNotificationHaptic(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Step 2: Verify OTP
   const handleVerifyOtp = async (codeToVerify?: string) => {
     const code = codeToVerify || otpInput;
     if (isSubmitting) return;
 
     if (!code || code.length !== 6) {
       setErrorMessage('لطفاً کد تایید ۶ رقمی را وارد کنید.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      showError('کد تایید ناقص', 'لطفاً کد تایید ۶ رقمی را وارد کنید.');
+      triggerNotificationHaptic(Haptics.NotificationFeedbackType.Warning);
       return;
     }
 
@@ -165,7 +166,7 @@ export default function LoginScreen() {
       setErrorMessage(
         `حساب به طور موقت قفل شده است. لطفاً ${formattedLockTime} دیگر تلاش کنید.`
       );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerNotificationHaptic(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
@@ -177,24 +178,24 @@ export default function LoginScreen() {
       const res = await login(normalized, code);
 
       if (res.success) {
-        setSuccessMessage('ورود با موفقیت انجام شد. در حال ورود...');
+        setSuccessMessage('ورود با موفقیت انجام شد...');
+        showSuccess('ورود موفق', 'به پنل سرشوفر گیتی‌سیر خوش آمدید.');
         resetLockout();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        triggerNotificationHaptic(Haptics.NotificationFeedbackType.Success);
       } else {
-        // Record failed attempt for brute-force protection
         const nowLocked = recordFailure();
-        if (nowLocked) {
-          setErrorMessage(
-            `تعداد تلاش‌های نادرست به سقف مجاز رسید. ارسال درخواست به مدت ${formattedLockTime} قفل شد.`
-          );
-        } else {
-          setErrorMessage(res.message || 'کد تایید اشتباه است.');
-        }
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        const msg = nowLocked
+          ? `تعداد تلاش‌های نادرست به سقف مجاز رسید. ارسال درخواست به مدت ${formattedLockTime} قفل شد.`
+          : res.message || 'کد تایید اشتباه است.';
+        setErrorMessage(msg);
+        showError('خطا در تایید کد ورود', msg);
+        triggerNotificationHaptic(Haptics.NotificationFeedbackType.Error);
       }
-    } catch {
-      setErrorMessage('خطای ارتباط با سرور. لطفاً مجدداً تلاش نمایید.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } catch (err: any) {
+      const msg = err?.message || 'خطای ارتباط با سرور. لطفاً مجدداً تلاش نمایید.';
+      setErrorMessage(msg);
+      showError('خطا در ورود', err);
+      triggerNotificationHaptic(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsSubmitting(false);
     }
@@ -238,20 +239,25 @@ export default function LoginScreen() {
                 accessibilityLabel="تغییر تم"
               >
                 {isDark ? (
-                  <Sun size={18} color="#D4AF37" />
+                  <Sun size={18} color={colors.gold} />
                 ) : (
-                  <Moon size={18} color="#D4AF37" />
+                  <Moon size={18} color={colors.gold} />
                 )}
               </TouchableOpacity>
 
-              <View style={styles.brandBadge}>
-                <Text style={[styles.brandBadgeText, { color: colors.gold }]}>
-                  گیتی‌سیر
+              <View
+                style={[
+                  styles.brandBadge,
+                  { borderColor: colors.commandBorder, backgroundColor: colors.commandBg },
+                ]}
+              >
+                <Text style={[styles.brandBadgeText, { color: colors.command }]}>
+                  گیتی‌سیر • سرشوفر
                 </Text>
               </View>
             </View>
 
-            {/* Luxury Logo & Emblem - dynamically adapts when keyboard opens */}
+            {/* Luxury Sarshoofer Emblem */}
             <View
               style={[
                 styles.emblemContainer,
@@ -263,8 +269,8 @@ export default function LoginScreen() {
                   styles.emblemRing,
                   isKeyboardOpen && styles.emblemRingCompact,
                   {
-                    borderColor: 'rgba(212, 175, 55, 0.4)',
-                    backgroundColor: isDark ? '#111827' : '#FFFFFF',
+                    borderColor: colors.command,
+                    backgroundColor: isDark ? '#0D1F28' : '#FFFFFF',
                   },
                 ]}
               >
@@ -282,7 +288,7 @@ export default function LoginScreen() {
                   { color: colors.text },
                 ]}
               >
-                سامانه رانندگان گیتی‌سیر
+                سامانه سرشوفران گیتی‌سیر
               </Text>
 
               {!isKeyboardOpen && (
@@ -290,8 +296,8 @@ export default function LoginScreen() {
                   style={[styles.mainSubtitle, { color: colors.textSecondary }]}
                 >
                   {step === 'mobile'
-                    ? 'برای ورود به حساب کاربری، شماره تلفن همراه خود را وارد کنید'
-                    : 'کد تایید ۶ رقمی پیامک‌شده را وارد کنید یا منتظر جایگذاری خودکار بمانید'}
+                    ? 'برای ورود به پنل سرشوفر، شماره تلفن همراه خود را وارد کنید'
+                    : 'کد تایید ۶ رقمی پیامک‌شده را وارد کنید'}
                 </Text>
               )}
             </View>
@@ -301,7 +307,6 @@ export default function LoginScreen() {
               <View
                 style={[
                   styles.banner,
-                  styles.bannerError,
                   {
                     backgroundColor: 'rgba(239, 68, 68, 0.12)',
                     borderColor: 'rgba(239, 68, 68, 0.35)',
@@ -317,7 +322,6 @@ export default function LoginScreen() {
               <View
                 style={[
                   styles.banner,
-                  styles.bannerSuccess,
                   {
                     backgroundColor: 'rgba(16, 185, 129, 0.12)',
                     borderColor: 'rgba(16, 185, 129, 0.35)',
@@ -336,7 +340,7 @@ export default function LoginScreen() {
                   styles.card,
                   {
                     backgroundColor: colors.card,
-                    borderColor: colors.border,
+                    borderColor: colors.commandBorder,
                   },
                 ]}
               >
@@ -348,7 +352,7 @@ export default function LoginScreen() {
                   style={[
                     styles.inputRow,
                     {
-                      backgroundColor: isDark ? '#0B0F19' : '#F4EFEA',
+                      backgroundColor: isDark ? '#071318' : '#F4F7F6',
                       borderColor: colors.border,
                     },
                   ]}
@@ -379,7 +383,7 @@ export default function LoginScreen() {
                     onBlur={() => setIsInputFocused(false)}
                     autoFocus
                   />
-                  <Phone size={20} color={colors.gold} style={styles.inputIcon} />
+                  <Phone size={20} color={colors.command} style={styles.inputIcon} />
                 </View>
 
                 <TouchableOpacity
@@ -395,11 +399,11 @@ export default function LoginScreen() {
                   activeOpacity={0.8}
                 >
                   {isSubmitting ? (
-                    <ActivityIndicator color="#0B0F19" size="small" />
+                    <ActivityIndicator color="#071318" size="small" />
                   ) : (
                     <>
                       <Text style={styles.primaryBtnText}>دریافت کد تایید</Text>
-                      <ArrowRight size={18} color="#0B0F19" style={{ marginRight: 6 }} />
+                      <ArrowRight size={18} color="#071318" style={{ marginRight: 6 }} />
                     </>
                   )}
                 </TouchableOpacity>
@@ -411,11 +415,10 @@ export default function LoginScreen() {
                   styles.card,
                   {
                     backgroundColor: colors.card,
-                    borderColor: colors.border,
+                    borderColor: colors.commandBorder,
                   },
                 ]}
               >
-                {/* Phone Info & Edit */}
                 <View style={styles.phoneSummaryRow}>
                   <TouchableOpacity
                     style={styles.editPhoneBtn}
@@ -425,8 +428,8 @@ export default function LoginScreen() {
                       setSuccessMessage(null);
                     }}
                   >
-                    <Edit2 size={14} color={colors.gold} />
-                    <Text style={[styles.editPhoneText, { color: colors.gold }]}>
+                    <Edit2 size={14} color={colors.command} />
+                    <Text style={[styles.editPhoneText, { color: colors.command }]}>
                       تغییر شماره
                     </Text>
                   </TouchableOpacity>
@@ -439,10 +442,9 @@ export default function LoginScreen() {
                 </View>
 
                 <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  کد تایید پیامکی (ورود خودکار فعال است)
+                  کد تایید پیامکی
                 </Text>
 
-                {/* OTP Digit Boxes Visualization with Full Overlay Input */}
                 <View style={styles.otpWrapper}>
                   <View style={styles.otpBoxesRow} pointerEvents="none">
                     {[0, 1, 2, 3, 4, 5].map((idx) => {
@@ -454,9 +456,9 @@ export default function LoginScreen() {
                           style={[
                             styles.otpBox,
                             {
-                              backgroundColor: isDark ? '#0B0F19' : '#F4EFEA',
+                              backgroundColor: isDark ? '#071318' : '#F4F7F6',
                               borderColor: isCurrent
-                                ? colors.gold
+                                ? colors.command
                                 : digit
                                 ? colors.gold
                                 : colors.border,
@@ -471,7 +473,6 @@ export default function LoginScreen() {
                     })}
                   </View>
 
-                  {/* Native Full-Overlay TextInput: Covers the entire box area reliably */}
                   <TextInput
                     ref={otpInputRef}
                     style={styles.fullOverlayInput}
@@ -493,7 +494,6 @@ export default function LoginScreen() {
                   />
                 </View>
 
-                {/* Resend Cooldown Timer / Button */}
                 <View style={styles.timerRow}>
                   {canResend ? (
                     <TouchableOpacity
@@ -501,7 +501,7 @@ export default function LoginScreen() {
                       disabled={isSubmitting}
                       style={styles.resendBtn}
                     >
-                      <Text style={[styles.resendBtnText, { color: colors.gold }]}>
+                      <Text style={[styles.resendBtnText, { color: colors.command }]}>
                         ارسال مجدد کد تایید
                       </Text>
                     </TouchableOpacity>
@@ -519,7 +519,6 @@ export default function LoginScreen() {
                   )}
                 </View>
 
-                {/* Verify & Enter Button */}
                 <TouchableOpacity
                   style={[
                     styles.primaryBtn,
@@ -533,10 +532,10 @@ export default function LoginScreen() {
                   activeOpacity={0.8}
                 >
                   {isSubmitting ? (
-                    <ActivityIndicator color="#0B0F19" size="small" />
+                    <ActivityIndicator color="#071318" size="small" />
                   ) : (
                     <>
-                      <KeyRound size={18} color="#0B0F19" style={{ marginLeft: 8 }} />
+                      <KeyRound size={18} color="#071318" style={{ marginLeft: 8 }} />
                       <Text style={styles.primaryBtnText}>تایید و ورود به برنامه</Text>
                     </>
                   )}
@@ -544,7 +543,6 @@ export default function LoginScreen() {
               </View>
             )}
 
-            {/* Footer note */}
             {!isKeyboardOpen && (
               <View style={styles.footerNote}>
                 <Text style={[styles.footerText, { color: colors.textSecondary }]}>
@@ -597,15 +595,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.3)',
   },
   brandBadgeText: {
     fontFamily: 'Vazirmatn_700Bold',
-    fontSize: 14,
+    fontSize: 13,
   },
   emblemContainer: {
     alignItems: 'center',
-    marginBottom: 26,
+    marginBottom: 24,
   },
   emblemContainerCompact: {
     marginBottom: 10,
@@ -613,28 +610,23 @@ const styles = StyleSheet.create({
   emblemRing: {
     width: 80,
     height: 80,
-    borderRadius: 40,
+    borderRadius: 24,
     borderWidth: 1.5,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 14,
-    shadowColor: '#D4AF37',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 4,
   },
   emblemRingCompact: {
     width: 46,
     height: 46,
-    borderRadius: 23,
+    borderRadius: 14,
     marginBottom: 6,
   },
   mainTitle: {
     fontFamily: 'Vazirmatn_700Bold',
-    fontSize: 22,
+    fontSize: 21,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   mainTitleCompact: {
     fontSize: 17,
@@ -645,7 +637,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 22,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
   },
   banner: {
     flexDirection: 'row-reverse',
@@ -655,8 +647,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 16,
   },
-  bannerError: {},
-  bannerSuccess: {},
   bannerIcon: {
     marginLeft: 8,
   },
@@ -678,11 +668,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 3,
   },
   inputLabel: {
     fontFamily: 'Vazirmatn_500Medium',
@@ -715,16 +700,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#D4AF37',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
   },
   primaryBtnText: {
     fontFamily: 'Vazirmatn_700Bold',
     fontSize: 15,
-    color: '#0B0F19',
+    color: '#071318',
   },
   phoneSummaryRow: {
     flexDirection: 'row-reverse',
@@ -733,7 +713,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(212, 175, 55, 0.2)',
+    borderBottomColor: 'rgba(20, 184, 166, 0.25)',
   },
   phoneDisplay: {
     flexDirection: 'row-reverse',
@@ -801,16 +781,15 @@ const styles = StyleSheet.create({
   },
   resendBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
   },
   resendBtnText: {
-    fontFamily: 'Vazirmatn_600SemiBold',
+    fontFamily: 'Vazirmatn_700Bold',
     fontSize: 14,
-    textDecorationLine: 'underline',
   },
   footerNote: {
-    alignItems: 'center',
     marginTop: 28,
+    alignItems: 'center',
   },
   footerText: {
     fontFamily: 'Vazirmatn_400Regular',

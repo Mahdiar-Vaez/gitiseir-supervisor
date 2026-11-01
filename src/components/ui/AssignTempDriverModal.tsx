@@ -9,14 +9,14 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits, toEnglishDigits } from '@/utils/persian-digits';
 import { assignTemporaryDriverApi } from '@/services/api/supervisor';
-import { TemporaryDriverInfo } from '@/services/api/types';
+import { TemporaryDriverInfo, DayTripGridItem } from '@/services/api/types';
 import {
   X,
   UserPlus,
@@ -27,6 +27,7 @@ import {
   FileWarning,
   CheckCircle2,
   Hash,
+  CalendarCheck,
 } from 'lucide-react-native';
 
 interface AssignTempDriverModalProps {
@@ -37,11 +38,14 @@ interface AssignTempDriverModalProps {
   mainDriverName?: string;
   defaultPrice?: number | null;
   existingTempDriver?: TemporaryDriverInfo | null;
+  selectedDateLabel?: string;
+  dayTrips?: DayTripGridItem[];
   onClose: () => void;
   onSuccess?: () => void;
 }
 
 const QUICK_REASONS = [
+  'خرابی لاستیک خودروی راننده اصلی در مسیر',
   'خرابی فنی خودروی راننده اصلی',
   'مرخصی روزانه راننده اصلی',
   'تأخیر یا عدم حضور راننده در مبدأ',
@@ -55,73 +59,138 @@ export function AssignTempDriverModal({
   mainDriverName,
   defaultPrice,
   existingTempDriver,
+  selectedDateLabel,
+  dayTrips = [],
   onClose,
   onSuccess,
 }: AssignTempDriverModalProps) {
   const { colors, isDark } = useAppTheme();
   const { token } = useAuth();
+  const { showSuccess, showError } = useToast();
 
+  const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [name, setName] = useState<string>('');
   const [family, setFamily] = useState<string>('');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [nationalCode, setNationalCode] = useState<string>('');
   const [cardNumber, setCardNumber] = useState<string>('');
-  const [price, setPrice] = useState<string>(String(defaultPrice ?? 1000000));
-  const [reason, setReason] = useState<string>('خرابی فنی خودروی راننده اصلی');
+  const [price, setPrice] = useState<string>('');
+  const [reason, setReason] = useState<string>(
+    'خرابی لاستیک خودروی راننده اصلی در مسیر'
+  );
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
   const initFormFields = () => {
     setErrorText(null);
-    if (existingTempDriver) {
-      setName(existingTempDriver.name || '');
-      setFamily(existingTempDriver.family || '');
-      setPhoneNumber(existingTempDriver.phoneNumber || '');
-      setNationalCode(existingTempDriver.nationalCode || '');
-      setCardNumber(existingTempDriver.cardNumber || '');
-      setReason(existingTempDriver.reason || 'خرابی فنی خودروی راننده اصلی');
-      setPrice(
-        String(existingTempDriver.price ?? defaultPrice ?? 1000000)
-      );
+    const initialId =
+      calendarDayId ||
+      (dayTrips.length > 0 ? dayTrips[0].tripWorkCalendarId : '');
+    setSelectedCalendarId(initialId);
+
+    const matchedTrip = dayTrips.find(
+      (t) => t.tripWorkCalendarId === initialId
+    );
+    const td = existingTempDriver || matchedTrip?.temporaryDriver;
+    const initialPrice =
+      td?.price ??
+      defaultPrice ??
+      matchedTrip?.outbound?.price ??
+      matchedTrip?.inbound?.price ??
+      0;
+
+    if (td) {
+      setName(td.name || '');
+      setFamily(td.family || '');
+      setPhoneNumber(td.phoneNumber || '');
+      setNationalCode(td.nationalCode || '');
+      setCardNumber(td.cardNumber || '');
+      setReason(td.reason || 'خرابی لاستیک خودروی راننده اصلی در مسیر');
+      setPrice(initialPrice > 0 ? String(initialPrice) : '');
     } else {
       setName('');
       setFamily('');
       setPhoneNumber('');
       setNationalCode('');
       setCardNumber('');
-      setReason('خرابی فنی خودروی راننده اصلی');
-      setPrice(String(defaultPrice ?? 1000000));
+      setReason('خرابی لاستیک خودروی راننده اصلی در مسیر');
+      setPrice(initialPrice > 0 ? String(initialPrice) : '');
     }
   };
 
-  if (!visible || !calendarDayId) return null;
+  if (!visible) return null;
+
+  const activeTripObj = dayTrips.find(
+    (t) => t.tripWorkCalendarId === selectedCalendarId
+  );
+
+  const effectiveTripName =
+    activeTripObj?.tripName || tripName || 'سرویس انتخابی';
+  const effectiveTripId = activeTripObj?.tripId ?? tripId;
+  const effectiveMainDriver =
+    activeTripObj?.driverFullName || mainDriverName;
+
+  const handleSelectTrip = (item: DayTripGridItem) => {
+    setSelectedCalendarId(item.tripWorkCalendarId);
+    const td = item.temporaryDriver;
+    if (td) {
+      setName(td.name || '');
+      setFamily(td.family || '');
+      setPhoneNumber(td.phoneNumber || '');
+      setNationalCode(td.nationalCode || '');
+      setCardNumber(td.cardNumber || '');
+      setReason(td.reason || 'خرابی لاستیک خودروی راننده اصلی در مسیر');
+      setPrice(String(td.price || item.outbound?.price || ''));
+    } else if (item.outbound?.price) {
+      setPrice(String(item.outbound.price));
+    }
+  };
 
   const handleSubmit = async () => {
     setErrorText(null);
 
+    const targetCalendarId = selectedCalendarId.trim();
     const cleanPhone = toEnglishDigits(phoneNumber).replace(/\D/g, '');
     const cleanNational = toEnglishDigits(nationalCode).replace(/\D/g, '');
     const cleanCard = toEnglishDigits(cardNumber).replace(/\D/g, '');
     const cleanPrice = Number(toEnglishDigits(price).replace(/\D/g, '')) || 0;
 
+    if (!targetCalendarId) {
+      const msg =
+        'شناسه روز کاری سفر مشخص نشده است. لطفاً سرویس را انتخاب نمایید.';
+      setErrorText(msg);
+      showError(msg, 'خطای اعتبارسنجی');
+      return;
+    }
     if (!name.trim() || !family.trim()) {
-      setErrorText('لطفاً نام و نام خانوادگی راننده جایگزین را وارد کنید.');
+      const msg = 'لطفاً نام و نام خانوادگی راننده جایگزین را وارد کنید.';
+      setErrorText(msg);
+      showError(msg, 'خطای اعتبارسنجی');
       return;
     }
     if (cleanPhone.length < 10) {
-      setErrorText('شماره موبایل راننده جایگزین معتبر نیست (مثال: 09123456789).');
+      const msg =
+        'شماره موبایل راننده جایگزین معتبر نیست (مثال: 09123456789).';
+      setErrorText(msg);
+      showError(msg, 'خطای اعتبارسنجی');
       return;
     }
     if (cleanNational.length !== 10) {
-      setErrorText('کد ملی باید دقیقاً ۱۰ رقم عددی باشد.');
+      const msg = 'کد ملی باید دقیقاً ۱۰ رقم عددی باشد.';
+      setErrorText(msg);
+      showError(msg, 'خطای اعتبارسنجی');
       return;
     }
     if (cleanCard.length > 0 && cleanCard.length !== 16) {
-      setErrorText('شماره کارت بانکی باید ۱۶ رقم باشد.');
+      const msg = 'شماره کارت بانکی باید ۱۶ رقم باشد.';
+      setErrorText(msg);
+      showError(msg, 'خطای اعتبارسنجی');
       return;
     }
     if (cleanPrice <= 0) {
-      setErrorText('مبلغ کرایه سرویس را به درستی وارد نمایید.');
+      const msg = 'مبلغ کرایه سرویس را به درستی وارد نمایید.';
+      setErrorText(msg);
+      showError(msg, 'خطای اعتبارسنجی');
       return;
     }
 
@@ -129,7 +198,7 @@ export function AssignTempDriverModal({
       setSubmitting(true);
       const res = await assignTemporaryDriverApi(
         {
-          calendarDayId,
+          calendarDayId: targetCalendarId,
           name: name.trim(),
           family: family.trim(),
           phoneNumber: cleanPhone,
@@ -141,14 +210,17 @@ export function AssignTempDriverModal({
         token
       );
 
-      Alert.alert(
-        'ثبت راننده موقت (لنگی)',
-        res?.message || 'راننده جایگزین با موفقیت برای این روز کاری ثبت شد.'
+      showSuccess(
+        res?.message ||
+          'راننده جایگزین (لنگی) با موفقیت برای این روز کاری ثبت و همگام‌سازی شد.',
+        'ثبت راننده موقت موفق'
       );
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      setErrorText(err?.message || 'خطا در ثبت راننده موقت در سرور.');
+      const errMsg = err?.message || 'خطا در ثبت راننده موقت در سرور.';
+      setErrorText(errMsg);
+      showError(errMsg, 'خطا در ثبت راننده موقت');
     } finally {
       setSubmitting(false);
     }
@@ -197,7 +269,9 @@ export function AssignTempDriverModal({
                     { color: colors.text, fontFamily: Typography.fontFamily.bold },
                   ]}
                 >
-                  تعیین راننده موقت (لنگی)
+                  {selectedDateLabel
+                    ? `تعیین راننده موقت (${selectedDateLabel})`
+                    : 'تعیین راننده موقت (لنگی)'}
                 </Text>
                 <Text
                   style={[
@@ -205,7 +279,7 @@ export function AssignTempDriverModal({
                     { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                   ]}
                 >
-                  همگام‌سازی مستقیم با تقویم کاری و اجرای سفر
+                  تخصیص و همگام‌سازی راننده جایگزین در سامانه ناوگان
                 </Text>
               </View>
               <View
@@ -223,6 +297,61 @@ export function AssignTempDriverModal({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollBody}
           >
+            {/* Day Trips Selector when opened from calendar header */}
+            {dayTrips.length > 0 ? (
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <CalendarCheck size={13} color={colors.gold} />
+                  <Text
+                    style={[
+                      styles.label,
+                      { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                    ]}
+                  >
+                    انتخاب سرویس این روز ({toPersianDigits(dayTrips.length)} مورد):
+                  </Text>
+                </View>
+                <View style={styles.tripSelectorList}>
+                  {dayTrips.map((item) => {
+                    const isSelected =
+                      item.tripWorkCalendarId === selectedCalendarId;
+                    return (
+                      <TouchableOpacity
+                        key={item.tripWorkCalendarId}
+                        onPress={() => handleSelectTrip(item)}
+                        style={[
+                          styles.tripOptionBtn,
+                          {
+                            backgroundColor: isSelected
+                              ? colors.goldBg
+                              : isDark
+                              ? '#0B0F19'
+                              : '#F8FAFC',
+                            borderColor: isSelected ? colors.gold : colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.tripOptionTitle,
+                            {
+                              color: isSelected ? colors.gold : colors.text,
+                              fontFamily: isSelected
+                                ? Typography.fontFamily.bold
+                                : Typography.fontFamily.medium,
+                            },
+                          ]}
+                        >
+                          {item.tripName} ({toPersianDigits(item.driverFullName || 'بدون راننده')})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
             {/* Context Summary Banner */}
             <View
               style={[
@@ -240,8 +369,8 @@ export function AssignTempDriverModal({
                     { color: colors.gold, fontFamily: Typography.fontFamily.bold },
                   ]}
                 >
-                  {tripName || 'سرویس انتخابی'}
-                  {tripId ? ` (کد ${toPersianDigits(tripId)})` : ''}
+                  {effectiveTripName}
+                  {effectiveTripId ? ` (کد ${toPersianDigits(effectiveTripId)})` : ''}
                 </Text>
                 <Text
                   style={[
@@ -253,7 +382,7 @@ export function AssignTempDriverModal({
                 </Text>
               </View>
 
-              {mainDriverName ? (
+              {effectiveMainDriver ? (
                 <View style={styles.contextRow}>
                   <Text
                     style={[
@@ -261,7 +390,7 @@ export function AssignTempDriverModal({
                       { color: colors.text, fontFamily: Typography.fontFamily.medium },
                     ]}
                   >
-                    {mainDriverName}
+                    {effectiveMainDriver}
                   </Text>
                   <Text
                     style={[
@@ -274,6 +403,35 @@ export function AssignTempDriverModal({
                 </View>
               ) : null}
             </View>
+
+            {/* Manual calendarDayId input if no trips loaded */}
+            {!calendarDayId && dayTrips.length === 0 ? (
+              <View style={styles.fieldGroup}>
+                <Text
+                  style={[
+                    styles.label,
+                    { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                  ]}
+                >
+                  شناسه روز کاری سفر *
+                </Text>
+                <TextInput
+                  value={selectedCalendarId}
+                  onChangeText={setSelectedCalendarId}
+                  placeholder="کد شناسه روز کاری سفر"
+                  placeholderTextColor={colors.textMuted}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
+                      borderColor: colors.border,
+                      color: colors.text,
+                      fontFamily: Typography.fontFamily.regular,
+                    },
+                  ]}
+                />
+              </View>
+            ) : null}
 
             {errorText ? (
               <View style={styles.errorBanner}>
@@ -431,7 +589,7 @@ export function AssignTempDriverModal({
                 <TextInput
                   value={price}
                   onChangeText={setPrice}
-                  placeholder="1000000"
+                  placeholder="1500000"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="numeric"
                   style={[
@@ -488,7 +646,7 @@ export function AssignTempDriverModal({
                     { color: colors.text, fontFamily: Typography.fontFamily.bold },
                   ]}
                 >
-                  علت تعیین راننده جایگزین (Reason) *
+                  علت تعیین راننده جایگزین (reason) *
                 </Text>
               </View>
 
@@ -651,10 +809,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   title: {
-    fontSize: 15,
+    fontSize: 14.5,
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     marginTop: 1,
   },
   iconBadge: {
@@ -667,6 +825,20 @@ const styles = StyleSheet.create({
   scrollBody: {
     gap: 10,
     paddingVertical: 4,
+  },
+  tripSelectorList: {
+    gap: 6,
+  },
+  tripOptionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'flex-end',
+  },
+  tripOptionTitle: {
+    fontSize: 12,
+    textAlign: 'right',
   },
   contextBanner: {
     borderRadius: BorderRadius.md,

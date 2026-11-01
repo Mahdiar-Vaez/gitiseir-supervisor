@@ -1,13 +1,10 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
-/**
- * Storage keys for driver authentication data
- */
 export const STORAGE_KEYS = {
-  TOKEN: 'gitiseir_auth_token',
-  USER: 'gitiseir_auth_user',
-  EXPIRE: 'gitiseir_token_expire',
+  TOKEN: 'gitiseir_sarshoofer_token',
+  USER: 'gitiseir_sarshoofer_user',
+  EXPIRE: 'gitiseir_sarshoofer_expire',
 } as const;
 
 export interface StorageAdapter {
@@ -16,15 +13,8 @@ export interface StorageAdapter {
   removeItem(key: string): Promise<void>;
 }
 
-// In-memory fallback for environments without SecureStore or localStorage
 const memoryStore = new Map<string, string>();
 
-/**
- * Cross-platform Secure Storage Adapter
- * - iOS: Keychain
- * - Android: EncryptedSharedPreferences (KeyStore)
- * - Web: window.localStorage with fallback to memory
- */
 export const secureStorage: StorageAdapter = {
   async setItem(key: string, value: string): Promise<void> {
     try {
@@ -40,7 +30,7 @@ export const secureStorage: StorageAdapter = {
         keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
     } catch (error) {
-      console.warn(`[secureStorage] Failed to set key "${key}":`, error);
+      console.log(`[secureStorage] Failed to set key "${key}":`, error);
       memoryStore.set(key, value);
     }
   },
@@ -55,7 +45,7 @@ export const secureStorage: StorageAdapter = {
       }
       return await SecureStore.getItemAsync(key);
     } catch (error) {
-      console.warn(`[secureStorage] Failed to get key "${key}":`, error);
+      console.log(`[secureStorage] Failed to get key "${key}":`, error);
       return memoryStore.get(key) ?? null;
     }
   },
@@ -71,7 +61,7 @@ export const secureStorage: StorageAdapter = {
       }
       await SecureStore.deleteItemAsync(key);
     } catch (error) {
-      console.warn(`[secureStorage] Failed to remove key "${key}":`, error);
+      console.log(`[secureStorage] Failed to remove key "${key}":`, error);
       memoryStore.delete(key);
     }
   },

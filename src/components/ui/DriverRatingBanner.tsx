@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { triggerImpactHaptic } from '@/utils/haptics';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits } from '@/utils/persian-digits';
@@ -25,11 +25,7 @@ export function DriverRatingBanner({
   const { colors, isDark } = useAppTheme();
 
   const handlePress = () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
-      // Haptics optional
-    }
+    triggerImpactHaptic();
     if (onPress) {
       onPress();
     } else {

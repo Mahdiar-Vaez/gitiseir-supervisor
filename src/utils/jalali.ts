@@ -39,11 +39,10 @@ export const PERSIAN_WEEKDAYS_SHORT = [
   'ج',
 ];
 
-// Gregorian to Jalali conversion algorithm
 export function gregorianToJalali(gy: number, gm: number, gd: number): [number, number, number] {
   const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
   let jy: number;
-  let gy2 = gm > 2 ? gy + 1 : gy;
+  const gy2 = gm > 2 ? gy + 1 : gy;
   let days =
     355666 +
     365 * gy +
@@ -78,19 +77,21 @@ export interface JalaliDateInfo {
   day: number;
   monthName: string;
   weekdayName: string;
-  formattedText: string; // e.g. "چهارشنبه ۲۹ مهر ۱۴۰۳"
+  formattedText: string;
+  numericDate: string;
 }
 
 export function getCurrentJalaliDate(): JalaliDateInfo {
   const now = new Date();
   const [jy, jm, jd] = gregorianToJalali(now.getFullYear(), now.getMonth() + 1, now.getDate());
 
-  // Day of week in Persian: Saturday is 0
-  // JS getDay(): 0 is Sunday, 1 is Monday ... 6 is Saturday
   const jsDay = now.getDay();
   const persianDayIndex = (jsDay + 1) % 7;
   const weekdayName = PERSIAN_WEEKDAYS[persianDayIndex];
   const monthName = JALALI_MONTH_NAMES[jm - 1];
+
+  const padMonth = String(jm).padStart(2, '0');
+  const padDay = String(jd).padStart(2, '0');
 
   return {
     year: jy,
@@ -99,23 +100,24 @@ export function getCurrentJalaliDate(): JalaliDateInfo {
     monthName,
     weekdayName,
     formattedText: `${weekdayName} ${toPersianDigits(jd)} ${monthName} ${toPersianDigits(jy)}`,
+    numericDate: toPersianDigits(`${jy}/${padMonth}/${padDay}`),
   };
 }
 
-/**
- * Returns number of days in a Jalali month
- */
+export function getCurrentPersianTime(): string {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  return toPersianDigits(`${hh}:${mm}`);
+}
+
 export function getDaysInJalaliMonth(year: number, month: number): number {
   if (month <= 6) return 31;
   if (month <= 11) return 30;
-  // Is leap year?
   const isLeap = ((year - (year > 0 ? 474 : 473)) % 2820 + 474 + 38) * 682 % 2816 < 682;
   return isLeap ? 30 : 29;
 }
 
-/**
- * Jalali to Gregorian conversion algorithm
- */
 export function jalaliToGregorian(jy: number, jm: number, jd: number): [number, number, number] {
   let gy = jy <= 979 ? 621 : 1600;
   jy -= jy <= 979 ? 0 : 979;
@@ -163,12 +165,8 @@ export function jalaliToGregorian(jy: number, jm: number, jd: number): [number, 
   return [gy, gm, gd];
 }
 
-/**
- * Returns the day of the week for the 1st of a Jalali month (0: Saturday .. 6: Friday)
- */
 export function getJalaliMonthStartWeekday(year: number, month: number): number {
   const [gy, gm, gd] = jalaliToGregorian(year, month, 1);
   const d = new Date(gy, gm - 1, gd);
   return (d.getDay() + 1) % 7;
 }
-

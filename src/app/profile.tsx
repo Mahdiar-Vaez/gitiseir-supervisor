@@ -8,28 +8,28 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import {
+  ShieldCheck,
+  Phone,
+  CreditCard,
+  LogOut,
+  Navigation,
+  Repeat,
+  CheckCircle2,
+  Radio,
+} from 'lucide-react-native';
 
 import { useAppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useSarshoofer } from '@/context/SarshooferContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { DriverIdCard, DriverInfo } from '@/components/ui/DriverIdCard';
-import { ScoreRing } from '@/components/ui/ScoreRing';
-import { StatCard } from '@/components/ui/StatCard';
 import { toPersianDigits } from '@/utils/persian-digits';
-import {
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Sparkles,
-  LogOut,
-  Phone,
-  CreditCard,
-} from 'lucide-react-native';
 
-export default function ProfileScreen() {
+export default function SarshooferProfileScreen() {
   const { colors, isDark } = useAppTheme();
-  const { user, isDriver, logout } = useAuth();
+  const { user, logout } = useAuth();
+  const { stats } = useSarshoofer();
 
   const [showLogoutModal, setShowLogoutModal] = useState<boolean>(false);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
@@ -39,193 +39,279 @@ export default function ProfileScreen() {
     try {
       await logout();
       setShowLogoutModal(false);
-    } catch (error) {
-      console.error('Logout error:', error);
     } finally {
       setIsLoggingOut(false);
     }
   };
 
-  // Build driver card data from authenticated session
-  const fullName = user ? `${user.name || ''} ${user.family || ''}`.trim() : 'محمد علیزاده';
-  const driverData: DriverInfo = {
-    name: fullName || 'راننده گیتی‌سیر',
-    nationalCode: toPersianDigits(user?.nationalCode || '۰۹۲۴۵۶۷۸۹۱'),
-    personnelCode: toPersianDigits(String(user?.driverId || user?.id || '۸۴۲۱')),
-    licenseNumber: toPersianDigits(user?.phoneNumber || '۰۹۰۴۳۷۹۳۴۲۴'),
-    licenseType: isDriver ? 'راننده هوشمند بین‌شهری' : 'پرسنل ناوگان گیتی‌سیر',
-    expiryDate: '۱۴۰۶/۰۴/۱۵',
-    vehicleModel: 'ولوو B9R VIP',
-    plateNumber: '۲۱ ع ۷۸۹ ایران ۴۴',
-    isVerified: user ? user.isActive : true,
-  };
+  const fullName = user
+    ? `${user.name || ''} ${user.family || ''}`.trim()
+    : 'مهدیار واعظ';
+  const displayName = fullName || 'سرشوفر ارشد گیتی‌سیر';
+  const personnelCode = toPersianDigits(String(user?.id || '۴۰۶۷'));
+  const nationalCode = toPersianDigits(user?.nationalCode || '۰۹۲۸۶۴۵۶۴۵');
+  const phone = toPersianDigits(user?.phoneNumber || '۰۹۰۴۳۷۹۳۴۲۴');
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <AppHeader />
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 24 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 28 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Physical Driver ID Card */}
-        <DriverIdCard driver={driverData} />
-
-        {/* User Account Quick Details Card */}
-        {user && (
-          <View
-            style={[
-              styles.accountCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <View style={styles.accountRow}>
-              <View style={styles.accountItem}>
-                <Phone size={14} color={colors.gold} style={{ marginLeft: 6 }} />
-                <Text style={[styles.accountLabel, { color: colors.textSecondary }]}>
-                  همراه:
-                </Text>
-                <Text style={[styles.accountValue, { color: colors.text }]}>
-                  {toPersianDigits(user.phoneNumber)}
-                </Text>
-              </View>
-
-              <View style={styles.accountItem}>
-                <CreditCard size={14} color={colors.gold} style={{ marginLeft: 6 }} />
-                <Text style={[styles.accountLabel, { color: colors.textSecondary }]}>
-                  کد ملی:
-                </Text>
-                <Text style={[styles.accountValue, { color: colors.text }]}>
-                  {toPersianDigits(user.nationalCode)}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Performance Score Section */}
+        {/* 1. Physical Lead Driver (Sarshoofer) Command ID Card */}
         <View
           style={[
-            styles.scoreCardContainer,
+            styles.idCard,
             {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
+              backgroundColor: isDark ? '#0D1F28' : '#FFFFFF',
+              borderColor: colors.command,
               shadowColor: colors.shadow,
             },
           ]}
         >
-          <View style={styles.scoreHeader}>
-            <View
-              style={[
-                styles.badgeStatus,
-                { backgroundColor: colors.successBg, borderColor: colors.success },
-              ]}
-            >
-              <Sparkles size={11} color={colors.success} />
+          <View style={styles.idCardHeader}>
+            <View style={styles.idBrandGroup}>
+              <ShieldCheck size={20} color={colors.gold} />
               <Text
                 style={[
-                  styles.badgeStatusText,
-                  { color: colors.success, fontFamily: Typography.fontFamily.bold },
+                  styles.idBrandTitle,
+                  { color: colors.gold, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                راننده نمونه
+                کارت شناسایی سرشوفر ارشد گیتی‌سیر
               </Text>
             </View>
 
-            <View style={styles.scoreTitleGroup}>
+            <View
+              style={[
+                styles.activeRoleBadge,
+                { backgroundColor: colors.commandBg, borderColor: colors.command },
+              ]}
+            >
+              <Radio size={11} color={colors.command} />
               <Text
                 style={[
-                  styles.scoreTitle,
+                  styles.activeRoleText,
+                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                فرماندهی فعال
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.idMainBody}>
+            <View
+              style={[
+                styles.largeAvatar,
+                {
+                  backgroundColor: colors.commandBg,
+                  borderColor: colors.gold,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.largeAvatarText,
+                  { color: colors.gold, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                {displayName.charAt(0)}
+              </Text>
+            </View>
+
+            <View style={styles.idPersonDetails}>
+              <Text
+                style={[
+                  styles.idName,
                   { color: colors.text, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                امتیاز عملکرد ماهانه
+                {displayName}
               </Text>
-              <View style={[styles.goldBar, { backgroundColor: colors.gold }]} />
+              <Text
+                style={[
+                  styles.idRoleDesc,
+                  { color: colors.command, fontFamily: Typography.fontFamily.medium },
+                ]}
+              >
+                سرشوفر ناظر خطوط بهمن موتور، کروز و سایپا پرس
+              </Text>
+              <Text
+                style={[
+                  styles.idPersonnelCode,
+                  { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
+                ]}
+              >
+                کد سازمانی سرشوفر: {personnelCode} • اعتبار: ۱۴۰۶/۱۲/۲۹
+              </Text>
             </View>
           </View>
 
-          {/* Circular Score Visualizer */}
-          <View style={styles.ringWrapper}>
-            <ScoreRing score={94} size={130} strokeWidth={9} />
-          </View>
-
-          <Text
+          <View
             style={[
-              styles.scoreFootnote,
-              { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+              styles.idFooterGrid,
+              {
+                backgroundColor: isDark ? '#071318' : '#F4F7F6',
+                borderColor: colors.border,
+              },
             ]}
           >
-            محاسبه شده بر اساس رضایت مسافران، زمان‌بندی و ایمنی سفر
-          </Text>
+            <View style={styles.idFooterItem}>
+              <Phone size={13} color={colors.gold} />
+              <Text
+                style={[
+                  styles.idFooterLabel,
+                  { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+                ]}
+              >
+                همراه:
+              </Text>
+              <Text
+                style={[
+                  styles.idFooterVal,
+                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                {phone}
+              </Text>
+            </View>
+
+            <View style={styles.idFooterItem}>
+              <CreditCard size={13} color={colors.gold} />
+              <Text
+                style={[
+                  styles.idFooterLabel,
+                  { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+                ]}
+              >
+                کد ملی:
+              </Text>
+              <Text
+                style={[
+                  styles.idFooterVal,
+                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                {nationalCode}
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* Statistical Metrics Section */}
-        <View style={styles.statsSectionHeader}>
+        {/* 2. Supervision Metrics Today */}
+        <View style={styles.sectionHeader}>
           <Text
             style={[
               styles.sectionTitle,
               { color: colors.text, fontFamily: Typography.fontFamily.bold },
             ]}
           >
-            شاخص‌های آماری این دوره
+            شاخص‌های عملکرد نظارتی امروز
           </Text>
-          <View style={[styles.goldBar, { backgroundColor: colors.gold }]} />
+          <View style={[styles.accentBar, { backgroundColor: colors.command }]} />
         </View>
 
-        <View style={styles.statsRow}>
-          <StatCard
-            title="سفرهای موفق"
-            value="۱۴۸"
-            trendText="+۱۲ نسبت به قبل"
-            isPositive={true}
-            icon={CheckCircle2}
-            variant="success"
-          />
+        <View style={styles.statsGrid}>
+          <View
+            style={[
+              styles.statBox,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <CheckCircle2 size={20} color={colors.success} />
+            <Text
+              style={[
+                styles.statValue,
+                { color: colors.text, fontFamily: Typography.fontFamily.bold },
+              ]}
+            >
+              {toPersianDigits(stats.arrivedCount + stats.notArrivedCount)}
+            </Text>
+            <Text
+              style={[
+                styles.statLabel,
+                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+              ]}
+            >
+              ثبت حضور با GPS
+            </Text>
+          </View>
 
-          <StatCard
-            title="تعداد تأخیر"
-            value="۱"
-            trendText="-۲ بهبود"
-            isPositive={true}
-            icon={Clock}
-            variant="warning"
-          />
+          <View
+            style={[
+              styles.statBox,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Repeat size={20} color={colors.langi} />
+            <Text
+              style={[
+                styles.statValue,
+                { color: colors.text, fontFamily: Typography.fontFamily.bold },
+              ]}
+            >
+              {toPersianDigits(stats.langiCount)}
+            </Text>
+            <Text
+              style={[
+                styles.statLabel,
+                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+              ]}
+            >
+              لنگی‌های فعال امروز
+            </Text>
+          </View>
 
-          <StatCard
-            title="تعداد غیبت"
-            value="۰"
-            trendText="بدون غیبت"
-            isPositive={true}
-            icon={AlertTriangle}
-            variant="gold"
-          />
+          <View
+            style={[
+              styles.statBox,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Navigation size={20} color={colors.command} />
+            <Text
+              style={[
+                styles.statValue,
+                { color: colors.text, fontFamily: Typography.fontFamily.bold },
+              ]}
+            >
+              ۱۰۰٪
+            </Text>
+            <Text
+              style={[
+                styles.statLabel,
+                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+              ]}
+            >
+              دقت موقعیت‌یابی
+            </Text>
+          </View>
         </View>
 
-        {/* Logout Action Button */}
+        {/* 3. Logout Button */}
         <TouchableOpacity
           style={[
             styles.logoutBtn,
             {
-              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEE2E2',
-              borderColor: 'rgba(239, 68, 68, 0.3)',
+              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEE2E2',
+              borderColor: 'rgba(239, 68, 68, 0.35)',
             },
           ]}
           onPress={() => setShowLogoutModal(true)}
           activeOpacity={0.8}
         >
           <LogOut size={18} color="#EF4444" style={{ marginLeft: 8 }} />
-          <Text style={styles.logoutBtnText}>خروج از حساب کاربری</Text>
+          <Text style={styles.logoutBtnText}>خروج از حساب کاربری سرشوفر</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Cross-platform Confirmation Modal for Logout */}
+      {/* Logout Confirmation Modal */}
       <Modal
         visible={showLogoutModal}
-        transparent={true}
+        transparent
         animationType="fade"
         onRequestClose={() => {
           if (!isLoggingOut) setShowLogoutModal(false);
@@ -236,19 +322,18 @@ export default function ProfileScreen() {
             style={[
               styles.modalCard,
               {
-                backgroundColor: isDark ? '#111827' : '#FFFFFF',
+                backgroundColor: colors.card,
                 borderColor: colors.borderGold,
-                shadowColor: colors.shadow,
               },
             ]}
           >
             <View
               style={[
                 styles.modalIconRing,
-                { backgroundColor: 'rgba(239, 68, 68, 0.1)' },
+                { backgroundColor: 'rgba(239, 68, 68, 0.12)' },
               ]}
             >
-              <LogOut size={30} color="#EF4444" />
+              <LogOut size={28} color="#EF4444" />
             </View>
 
             <Text
@@ -257,7 +342,7 @@ export default function ProfileScreen() {
                 { color: colors.text, fontFamily: Typography.fontFamily.bold },
               ]}
             >
-              خروج از حساب کاربری
+              خروج از پنل سرشوفر
             </Text>
 
             <Text
@@ -269,7 +354,7 @@ export default function ProfileScreen() {
                 },
               ]}
             >
-              آیا از خروج از حساب کاربری راننده اطمینان دارید؟ برای ورود مجدد نیاز به دریافت کد تایید پیامکی خواهید داشت.
+              آیا از خروج از حساب کاربری سرشوفر اطمینان دارید؟ برای ورود مجدد نیاز به دریافت کد تایید پیامکی خواهید داشت.
             </Text>
 
             <View style={styles.modalActionsRow}>
@@ -277,21 +362,17 @@ export default function ProfileScreen() {
                 style={[
                   styles.modalCancelBtn,
                   {
-                    backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                    backgroundColor: isDark ? '#132B38' : '#F1F5F9',
                     borderColor: colors.border,
                   },
                 ]}
                 onPress={() => setShowLogoutModal(false)}
                 disabled={isLoggingOut}
-                activeOpacity={0.8}
               >
                 <Text
                   style={[
                     styles.modalCancelText,
-                    {
-                      color: colors.text,
-                      fontFamily: Typography.fontFamily.medium,
-                    },
+                    { color: colors.text, fontFamily: Typography.fontFamily.medium },
                   ]}
                 >
                   انصراف
@@ -308,7 +389,6 @@ export default function ProfileScreen() {
                 ]}
                 onPress={handleConfirmLogout}
                 disabled={isLoggingOut}
-                activeOpacity={0.8}
               >
                 {isLoggingOut ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
@@ -340,89 +420,120 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     gap: Spacing.md,
   },
-  accountCard: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
+  idCard: {
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1.5,
     padding: Spacing.md,
+    gap: 14,
   },
-  accountRow: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  accountItem: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-  },
-  accountLabel: {
-    fontFamily: Typography.fontFamily.regular,
-    fontSize: 12,
-    marginRight: 4,
-  },
-  accountValue: {
-    fontFamily: Typography.fontFamily.bold,
-    fontSize: 13,
-  },
-  scoreCardContainer: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    padding: Spacing.md,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  scoreHeader: {
+  idCardHeader: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.md,
   },
-  scoreTitleGroup: {
+  idBrandGroup: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 6,
   },
-  goldBar: {
-    width: 3.5,
-    height: 15,
-    borderRadius: 2,
+  idBrandTitle: {
+    fontSize: 13.5,
   },
-  scoreTitle: {
-    fontSize: 15,
-  },
-  badgeStatus: {
+  activeRoleBadge: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
   },
-  badgeStatusText: {
-    fontSize: 10.5,
+  activeRoleText: {
+    fontSize: 10,
   },
-  ringWrapper: {
-    marginVertical: 2,
+  idMainBody: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
   },
-  scoreFootnote: {
-    fontSize: 10.5,
-    textAlign: 'center',
-    marginTop: Spacing.sm,
+  largeAvatar: {
+    width: 58,
+    height: 58,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  statsSectionHeader: {
+  largeAvatarText: {
+    fontSize: 24,
+  },
+  idPersonDetails: {
+    alignItems: 'flex-end',
+    flex: 1,
+    gap: 3,
+  },
+  idName: {
+    fontSize: 16.5,
+  },
+  idRoleDesc: {
+    fontSize: 12,
+    textAlign: 'right',
+  },
+  idPersonnelCode: {
+    fontSize: 11,
+  },
+  idFooterGrid: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  idFooterItem: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
+  },
+  idFooterLabel: {
+    fontSize: 11.5,
+  },
+  idFooterVal: {
+    fontSize: 12.5,
+  },
+  sectionHeader: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 6,
-    marginTop: 2,
+    marginTop: 4,
+  },
+  accentBar: {
+    width: 3.5,
+    height: 16,
+    borderRadius: 2,
   },
   sectionTitle: {
-    fontSize: 15,
+    fontSize: 14.5,
   },
-  statsRow: {
+  statsGrid: {
     flexDirection: 'row-reverse',
+    gap: 8,
+  },
+  statBox: {
+    flex: 1,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: 'center',
     gap: 6,
+  },
+  statValue: {
+    fontSize: 18,
+  },
+  statLabel: {
+    fontSize: 10.5,
+    textAlign: 'center',
   },
   logoutBtn: {
     height: 48,
@@ -431,17 +542,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
   },
   logoutBtnText: {
     fontFamily: Typography.fontFamily.bold,
     fontSize: 14,
     color: '#EF4444',
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -453,29 +563,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 24,
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
   },
   modalIconRing: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     textAlign: 'center',
     marginBottom: 8,
   },
   modalSubtitle: {
     fontSize: 13,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
+    lineHeight: 21,
+    marginBottom: 22,
   },
   modalActionsRow: {
     flexDirection: 'row-reverse',

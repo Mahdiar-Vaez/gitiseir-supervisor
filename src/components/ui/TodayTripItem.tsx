@@ -6,7 +6,7 @@ import { toPersianDigits } from '@/utils/persian-digits';
 import { TodayTrip } from '@/services/api/types';
 import { StatusPill } from './StatusPill';
 import { getTripStatusConfig } from '@/utils/trip-status';
-import { Clock, MapPin, ChevronLeft, Play, Square } from 'lucide-react-native';
+import { Clock, MapPin, ChevronLeft, Play, Square, Lock } from 'lucide-react-native';
 
 interface TodayTripItemProps {
   trip: TodayTrip;
@@ -14,6 +14,7 @@ interface TodayTripItemProps {
   onStartTrip?: (calendarDayId: string) => void;
   onEndTrip?: (calendarDayId: string) => void;
   isLoadingAction?: boolean;
+  isLocked?: boolean;
 }
 
 export function TodayTripItem({
@@ -22,6 +23,7 @@ export function TodayTripItem({
   onStartTrip,
   onEndTrip,
   isLoadingAction = false,
+  isLocked = false,
 }: TodayTripItemProps) {
   const { colors, isDark } = useAppTheme();
 
@@ -94,14 +96,14 @@ export function TodayTripItem({
                 { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
               ]}
             >
-              {trip.serviceLocationTitle}
+              {trip.serviceLocationTitle || 'مقصد ثبت نشده'}
             </Text>
           </View>
         </View>
 
         {/* Actions & Chevron */}
         <View style={styles.actionCol}>
-          {trip.canStartTrip && onStartTrip ? (
+          {trip.canStartTrip && !isLocked && onStartTrip ? (
             <Pressable
               onPress={(e) => {
                 e.stopPropagation();
@@ -134,6 +136,26 @@ export function TodayTripItem({
                 </>
               )}
             </Pressable>
+          ) : isLocked && trip.status === 1 ? (
+            <View
+              style={[
+                styles.lockedBadge,
+                {
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Lock size={11} color={colors.textMuted} style={{ marginLeft: 3 }} />
+              <Text
+                style={[
+                  styles.lockedText,
+                  { color: colors.textMuted, fontFamily: Typography.fontFamily.medium },
+                ]}
+              >
+                در نوبت بعدی
+              </Text>
+            </View>
           ) : trip.canEndTrip && onEndTrip ? (
             <Pressable
               onPress={(e) => {
@@ -254,6 +276,17 @@ const styles = StyleSheet.create({
   },
   actionBtnText: {
     fontSize: 12,
+  },
+  lockedBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  lockedText: {
+    fontSize: 10.5,
   },
   chevronBox: {
     width: 32,

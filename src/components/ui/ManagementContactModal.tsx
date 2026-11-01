@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { triggerNotificationHaptic } from '@/utils/haptics';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits } from '@/utils/persian-digits';
@@ -75,11 +75,7 @@ export function ManagementContactModal({
     setTimeout(() => {
       setIsSubmitting(false);
       setIsSubmitted(true);
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {
-        // Haptics fallback
-      }
+      triggerNotificationHaptic('success');
       setTimeout(() => {
         handleClose();
       }, 1600);

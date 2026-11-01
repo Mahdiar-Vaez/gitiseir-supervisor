@@ -1,16 +1,30 @@
+import { Platform } from 'react-native';
 import { ApiResponse } from './types';
 
-export const API_BASE_URL = 'https://backend.vaezprojects.ir';
+export const REMOTE_BACKEND_URL = 'https://backend.vaezprojects.ir';
+
+/**
+ * On Web in the browser, using a relative URL (empty base) routes API calls through
+ * Vercel's reverse proxy (/api/ -> https://backend.vaezprojects.ir/api/), completely
+ * bypassing browser Same-Origin CORS preflight failures.
+ * On Native (iOS/Android) or when an explicit EXPO_PUBLIC_API_URL is provided, it uses the remote domain.
+ */
+export const API_BASE_URL =
+  Platform.OS === 'web' && typeof window !== 'undefined'
+    ? (process.env.EXPO_PUBLIC_API_URL || '')
+    : (process.env.EXPO_PUBLIC_API_URL || REMOTE_BACKEND_URL);
 
 export class ApiError extends Error {
   statusCode: number;
   data: any;
+  endpoint: string;
 
-  constructor(message: string, statusCode = 500, data?: any) {
+  constructor(message: string, statusCode = 500, data?: any, endpoint = '') {
     super(message);
     this.name = 'ApiError';
     this.statusCode = statusCode;
     this.data = data;
+    this.endpoint = endpoint;
   }
 }
 
@@ -32,6 +46,52 @@ function parseBodyForLog(body: any): any {
     }
   }
   return body;
+}
+
+/**
+ * Extract detailed human-readable error message from backend response payload
+ */
+function extractBackendErrorMessage(data: any, httpStatus: number): string {
+  if (data) {
+    if (typeof data.message === 'string' && data.message.trim()) {
+      return data.message.trim();
+    }
+    if (
+      data.result &&
+      typeof data.result === 'object' &&
+      typeof data.result.message === 'string' &&
+      data.result.message.trim()
+    ) {
+      return data.result.message.trim();
+    }
+    if (typeof data.errorMessage === 'string' && data.errorMessage.trim()) {
+      return data.errorMessage.trim();
+    }
+    if (typeof data.title === 'string' && data.title.trim()) {
+      return data.title.trim();
+    }
+    if (data.errors && typeof data.errors === 'object') {
+      const firstErr = Object.values(data.errors).flat()[0];
+      if (typeof firstErr === 'string' && firstErr.trim()) {
+        return firstErr.trim();
+      }
+    }
+  }
+
+  const effectiveStatus = data?.statusCode || httpStatus;
+  if (effectiveStatus === 401) {
+    return 'نشست کاربری منقضی شده یا کد تایید نامعتبر است (۴۰۱).';
+  }
+  if (effectiveStatus === 403) {
+    return 'عدم دسترسی به این سرویس برای نقش کاربری فعلی (۴۰۳).';
+  }
+  if (effectiveStatus === 404) {
+    return 'اطلاعات یا سرویس مورد نظر در سرور یافت نشد (۴۰۴).';
+  }
+  if (effectiveStatus >= 500) {
+    return `خطای داخلی سرور (${effectiveStatus}).`;
+  }
+  return `عملیات با خطا مواجه شد (کد وضعیت: ${effectiveStatus}).`;
 }
 
 /**
@@ -57,7 +117,12 @@ export async function apiClient<T>(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : API_BASE_URL
+    ? `${API_BASE_URL}${normalizedEndpoint}`
+    : normalizedEndpoint;
   const startTime = Date.now();
   const parsedBody = parseBodyForLog(customConfig.body);
 
@@ -95,8 +160,10 @@ export async function apiClient<T>(
           `=======================================================`
       );
       throw new ApiError(
-        'خطایی در دریافت پاسخ از سرور رخ داد.',
-        response.status
+        `پاسخ غیرمعتبر از سرور دریافت شد (کد ${response.status}).`,
+        response.status,
+        rawText,
+        endpoint
       );
     }
 
@@ -109,19 +176,10 @@ export async function apiClient<T>(
         `=======================================================`
     );
 
-    // Inspect server response payload: some endpoints return HTTP 200 with success: false
     if (!response.ok || (data && data.success === false)) {
-      const errorMsg =
-        data?.message ||
-        (response.status === 401
-          ? 'کد یا شماره اشتباه است یا منقضی شده.'
-          : response.status === 404
-          ? 'سرویس مورد نظر یافت نشد.'
-          : response.status >= 500
-          ? 'خطای سرور. لطفاً بعداً تلاش کنید.'
-          : 'عملیات با خطا مواجه شد.');
-
-      throw new ApiError(errorMsg, data?.statusCode || response.status, data);
+      const effectiveStatus = data?.statusCode || response.status;
+      const errorMsg = extractBackendErrorMessage(data, response.status);
+      throw new ApiError(errorMsg, effectiveStatus, data, endpoint);
     }
 
     return data;
@@ -140,7 +198,12 @@ export async function apiClient<T>(
     );
 
     if (error.name === 'AbortError') {
-      throw new ApiError('زمان انتظار برای پاسخ سرور به پایان رسید.', 408);
+      throw new ApiError(
+        'زمان انتظار برای پاسخ سرور به پایان رسید (Timeout).',
+        408,
+        null,
+        endpoint
+      );
     }
 
     if (error instanceof ApiError) {
@@ -148,8 +211,10 @@ export async function apiClient<T>(
     }
 
     throw new ApiError(
-      error?.message || 'خطای غیرمنتظره در اتصال به اینترنت رخ داد.',
-      500
+      error?.message || 'خطا در برقراری ارتباط با سرور. اتصال اینترنت را بررسی کنید.',
+      500,
+      null,
+      endpoint
     );
   }
 }

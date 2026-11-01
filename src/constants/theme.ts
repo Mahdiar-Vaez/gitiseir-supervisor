@@ -1,6 +1,8 @@
 /**
- * Gitiseir Driver App - Theme & Design Tokens
- * Supports Dual Luxury Themes: Dark Luxury Gold and Light Milky Gold
+ * Gitiseir Sarshoofer (Lead Driver) App - Theme & Design Tokens
+ * Brand Family: Gitiseir Luxury Fleet
+ * Visual Persona: Executive Command Slate & Emerald-Teal + Heritage Gold
+ * See DESIGN.md / disign.md for full brand & role differentiation details.
  */
 
 import { Platform } from 'react-native';
@@ -8,63 +10,87 @@ import { Platform } from 'react-native';
 export const Colors = {
   dark: {
     name: 'dark' as const,
-    bg: '#0B0F19',
-    background: '#0B0F19',
-    backgroundElement: '#111827',
-    backgroundSelected: '#1E293B',
-    card: '#111827',
-    cardSubtle: '#1E293B',
-    cardElevated: '#182234',
+    bg: '#071318', // سرمه‌ای-سبز تیره فرماندهی (Deep Command Slate)
+    background: '#071318',
+    backgroundElement: '#0D1F28',
+    backgroundSelected: '#152F3D',
+    card: '#0D1F28',
+    cardSubtle: '#132B38',
+    cardElevated: '#163342',
+    // Heritage Brand Gold (حفظ اصالت برند گیتی‌سیر)
     gold: '#D4AF37',
     goldSoft: '#E8C766',
     goldBg: 'rgba(212, 175, 55, 0.12)',
     goldGlow: 'rgba(212, 175, 55, 0.25)',
-    goldButtonText: '#0B0F19',
+    goldButtonText: '#071318',
+    // Sarshoofer Command Accent (فیروزه‌ای-زمردی نظارتی سرشوفر)
+    command: '#14B8A6',
+    commandSoft: '#2DD4BF',
+    commandBg: 'rgba(20, 184, 166, 0.14)',
+    commandBorder: 'rgba(20, 184, 166, 0.38)',
+    // Langi / Substitute Driver Accent (کهربایی ویژه لنگی)
+    langi: '#F59E0B',
+    langiBg: 'rgba(245, 158, 11, 0.14)',
+    langiBorder: 'rgba(245, 158, 11, 0.40)',
+    // Typography & Borders
     text: '#F8FAFC',
     textSecondary: '#CBD5E1',
     textMuted: '#94A3B8',
     border: 'rgba(255, 255, 255, 0.09)',
     borderSubtle: 'rgba(255, 255, 255, 0.05)',
     borderGold: 'rgba(212, 175, 55, 0.35)',
-    success: '#34D399',
-    successBg: 'rgba(52, 211, 153, 0.14)',
-    warning: '#D4AF37',
-    warningBg: 'rgba(212, 175, 55, 0.14)',
+    // Status Semantic Tokens
+    success: '#10B981',
+    successBg: 'rgba(16, 185, 129, 0.14)',
+    warning: '#F59E0B',
+    warningBg: 'rgba(245, 158, 11, 0.14)',
     danger: '#FB7185',
     dangerBg: 'rgba(251, 113, 133, 0.14)',
-    info: '#60A5FA',
-    infoBg: 'rgba(96, 165, 250, 0.14)',
+    info: '#38BDF8',
+    infoBg: 'rgba(56, 189, 248, 0.14)',
     shadow: '#000000',
   },
   light: {
     name: 'light' as const,
-    bg: '#FAF7F2', // شیری لوکس (Warm Milky Cream)
-    background: '#FAF7F2',
+    bg: '#F4F7F6', // مرواریدی روشن و رسمی (Executive Pearl Slate)
+    background: '#F4F7F6',
     backgroundElement: '#FFFFFF',
-    backgroundSelected: '#F3EFE6',
-    card: '#FFFFFF', // کارت تمیز سفید با سایه نرم
-    cardSubtle: '#F3EFE6', // پس‌زمینه شیری ثانویه
+    backgroundSelected: '#E6F0EE',
+    card: '#FFFFFF',
+    cardSubtle: '#EBF1EF',
     cardElevated: '#FFFFFF',
-    gold: '#C59B27', // طلایی چشم‌نواز با کنتراست بهینه روی شیری
+    // Heritage Brand Gold
+    gold: '#C59B27',
     goldSoft: '#D4AF37',
     goldBg: 'rgba(197, 155, 39, 0.12)',
     goldGlow: 'rgba(197, 155, 39, 0.22)',
     goldButtonText: '#FFFFFF',
-    text: '#0F172A', // سرمه‌ای تیره برای حداکثر خوانایی
+    // Sarshoofer Command Accent
+    command: '#0D9488',
+    commandSoft: '#14B8A6',
+    commandBg: 'rgba(13, 148, 136, 0.10)',
+    commandBorder: 'rgba(13, 148, 136, 0.32)',
+    // Langi / Substitute Driver Accent
+    langi: '#D97706',
+    langiBg: 'rgba(217, 119, 6, 0.12)',
+    langiBorder: 'rgba(217, 119, 6, 0.35)',
+    // Typography & Borders
+    text: '#0F172A',
     textSecondary: '#334155',
     textMuted: '#64748B',
-    border: 'rgba(197, 155, 39, 0.22)',
+    border: 'rgba(13, 148, 136, 0.18)',
     borderSubtle: 'rgba(0, 0, 0, 0.06)',
-    borderGold: 'rgba(197, 155, 39, 0.45)',
-    success: '#10B981',
-    successBg: 'rgba(16, 185, 129, 0.12)',
+    borderGold: 'rgba(197, 155, 39, 0.42)',
+    // Status Semantic Tokens
+    success: '#059669',
+    successBg: 'rgba(5, 150, 105, 0.12)',
     warning: '#D97706',
     warningBg: 'rgba(217, 119, 6, 0.12)',
-    danger: '#EF4444',
-    dangerBg: 'rgba(239, 68, 68, 0.12)',
-    info: '#2563EB',
-    infoBg: 'rgba(37, 99, 235, 0.12)',
-    shadow: 'rgba(148, 120, 60, 0.15)',
+    danger: '#E11D48',
+    dangerBg: 'rgba(225, 29, 72, 0.12)',
+    info: '#0284C7',
+    infoBg: 'rgba(2, 132, 199, 0.12)',
+    shadow: 'rgba(15, 23, 42, 0.12)',
   },
 } as const;
 
@@ -115,7 +141,6 @@ export const Spacing = {
   lg: 16,
   xl: 24,
   xxl: 32,
-  // Starter template backward compatibility
   half: 2,
   one: 4,
   two: 8,
@@ -135,7 +160,7 @@ export const BorderRadius = {
 } as const;
 
 export const TouchTarget = {
-  min: 44, // Minimum touch target size (WCAG & mobile UX standard)
+  min: 44,
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;

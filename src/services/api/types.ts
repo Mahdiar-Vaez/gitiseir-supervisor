@@ -8,24 +8,15 @@ export interface ApiResponse<T> {
   result: T;
 }
 
-/**
- * Send OTP request payload
- */
 export interface SendOtpRequest {
   mobile: string;
 }
 
-/**
- * Driver Login request payload
- */
 export interface LoginRequest {
   mobile: string;
   code: string;
 }
 
-/**
- * User Role structure
- */
 export interface UserRole {
   userId: number;
   roleId: number;
@@ -36,9 +27,6 @@ export interface UserRole {
   };
 }
 
-/**
- * Authenticated User record
- */
 export interface AuthUser {
   id: number;
   name: string;
@@ -53,9 +41,6 @@ export interface AuthUser {
   userRoles: UserRole[];
 }
 
-/**
- * Successful Login result payload
- */
 export interface LoginResult {
   token: string;
   user: AuthUser;
@@ -77,14 +62,6 @@ export interface ActiveTrip {
   outboundEnd: string;
   totalStations: number;
   visitedStations: number;
-  /**
-   * Backend TripStatus enum:
-   * 0: Pending ("در انتظار تأیید")
-   * 1: Confirmed ("تأیید شده")
-   * 2: InProgress ("در حال انجام")
-   * 3: Completed ("تکمیل شده")
-   * 4: Cancelled ("لغو شده")
-   */
   status: number;
   entering: boolean;
 }
@@ -99,14 +76,6 @@ export interface TodayTrip {
   serviceLocationTitle: string;
   scheduledStartTime: string;
   scheduledEndTime: string;
-  /**
-   * Backend TripStatus enum:
-   * 0: Pending ("در انتظار تأیید")
-   * 1: Confirmed ("تأیید شده")
-   * 2: InProgress ("در حال انجام")
-   * 3: Completed ("تکمیل شده")
-   * 4: Cancelled ("لغو شده")
-   */
   status: number;
   startedAtUtc: string | null;
   endedAtUtc: string | null;
@@ -121,14 +90,6 @@ export interface TodayTrip {
 export interface TripSummary {
   tripId: number;
   name: string;
-  /**
-   * Backend TripStatus enum:
-   * 0: Pending ("در انتظار تأیید")
-   * 1: Confirmed ("تأیید شده")
-   * 2: InProgress ("در حال انجام")
-   * 3: Completed ("تکمیل شده")
-   * 4: Cancelled ("لغو شده")
-   */
   status: number;
   executionStatus: number;
   outboundStart: string;
@@ -148,9 +109,6 @@ export interface TripSummary {
   nextStation: string | null;
 }
 
-/**
- * Outbound / Inbound schedule and pricing info
- */
 export interface TripLegInfo {
   start: string;
   end: string;
@@ -158,9 +116,6 @@ export interface TripLegInfo {
   price: number;
 }
 
-/**
- * Temporary / Substitute driver information
- */
 export interface TemporaryDriverInfo {
   id: string;
   tripWorkCalendarDayId: string;
@@ -184,9 +139,6 @@ export interface TemporaryDriverInfo {
   canEdit?: boolean;
 }
 
-/**
- * Single trip inside a work calendar day
- */
 export interface WorkCalendarTrip {
   tripWorkCalendarId: string;
   tripId: number;
@@ -202,9 +154,6 @@ export interface WorkCalendarTrip {
   canSetTemporaryDriver: boolean;
 }
 
-/**
- * Single day inside the monthly work calendar
- */
 export interface WorkCalendarDay {
   year: number;
   month: number;
@@ -219,16 +168,10 @@ export interface WorkCalendarDay {
   trips: WorkCalendarTrip[];
 }
 
-/**
- * Result returned by GET /api/my-work-calendar
- */
 export interface WorkCalendarResult {
   days: WorkCalendarDay[];
 }
 
-/**
- * Detailed trip returned by GET /api/my-work-calendar/day-trips-grid
- */
 export interface DayTripGridItem {
   tripWorkCalendarId: string;
   tripId: number;
@@ -252,9 +195,6 @@ export interface DayTripGridItem {
   canSetTemporaryDriver: boolean;
 }
 
-/**
- * Company Service Location option
- */
 export interface CompanyServiceLocation {
   id: number;
   title: string;
@@ -262,9 +202,6 @@ export interface CompanyServiceLocation {
   isActive?: boolean;
 }
 
-/**
- * Single item inside Supervisor Daily Board
- */
 export interface SupervisorDailyBoardItem {
   calendarDayId?: string;
   tripWorkCalendarId?: string;
@@ -292,9 +229,6 @@ export interface SupervisorDailyBoardItem {
   canSetTemporaryDriver?: boolean;
 }
 
-/**
- * Result returned by GET /api/SupervisorsMobile/Trip/daily-board
- */
 export interface SupervisorDailyBoardResult {
   companyServiceLocationId: number;
   companyServiceLocationTitle: string;
@@ -309,17 +243,11 @@ export interface SupervisorDailyBoardResult {
   items: SupervisorDailyBoardItem[];
 }
 
-/**
- * Request body for POST /api/SupervisorsMobile/Trip/confirm-attendance
- */
 export interface ConfirmAttendanceRequest {
   calendarDayId: string;
   note: string;
 }
 
-/**
- * Request body for POST /api/SupervisorsMobile/Trip/assign-temporary-driver
- */
 export interface AssignTemporaryDriverRequest {
   calendarDayId: string;
   name: string;
@@ -331,4 +259,91 @@ export interface AssignTemporaryDriverRequest {
   price: number;
 }
 
+/**
+ * Sarshoofer (Lead Driver) Domain Types - MOB-06
+ */
+export type ArrivalStatus = 'pending' | 'arrived' | 'not_arrived';
 
+export interface GpsVerificationStamp {
+  latitude: number;
+  longitude: number;
+  verifiedAtTime: string;
+  note?: string;
+}
+
+export interface LangiApprovalStep {
+  accepted: boolean | null;
+  reason?: string | null;
+  creationDate?: string | null;
+  approverName?: string | null;
+}
+
+export interface LangiRequestItem {
+  id: string;
+  tripWorkCalendarId: string;
+  tripId: number;
+  tripName: string;
+  serviceLocationTitle: string;
+  scheduledTime: string;
+  originalDriverName: string;
+  originalDriverPhone: string;
+  name: string;
+  family: string;
+  nationalCode: string;
+  phoneNumber: string;
+  price: number;
+  paymentType: 'shaba' | 'card';
+  cardAccountNumber: string;
+  cardNumber: string;
+  reason: string;
+  creationTimePersian: string;
+  step1: LangiApprovalStep;
+  step2: LangiApprovalStep;
+  step3: LangiApprovalStep;
+  payCode: string | null;
+  readyForPay: boolean;
+  fullyAcceptedAndPayed: boolean;
+}
+
+export interface TodayDriverItem {
+  tripWorkCalendarId: string;
+  tripId: number;
+  tripName: string;
+  serviceLocationTitle: string;
+  shiftLabel: string;
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  driverId: number;
+  driverFullName: string;
+  driverPhone: string;
+  vehicleType: string;
+  vehicleColor: string;
+  licensePlate: string;
+  passengersCount: number;
+  stationsCount: number;
+  price: number;
+  arrivalStatus: ArrivalStatus;
+  gpsStamp: GpsVerificationStamp | null;
+  hasLangi: boolean;
+  canRequestLangi: boolean;
+  langi: LangiRequestItem | null;
+}
+
+export interface CreateLangiPayload {
+  tripWorkCalendarId: string;
+  tripId: number;
+  tripName: string;
+  serviceLocationTitle: string;
+  scheduledTime: string;
+  originalDriverName: string;
+  originalDriverPhone: string;
+  name: string;
+  family: string;
+  nationalCode: string;
+  phoneNumber: string;
+  price: number;
+  paymentType: 'shaba' | 'card';
+  cardAccountNumber: string;
+  cardNumber: string;
+  reason: string;
+}
