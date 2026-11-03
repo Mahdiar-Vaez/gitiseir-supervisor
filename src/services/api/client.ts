@@ -13,7 +13,7 @@ export const DOMAIN_BACKEND_URL = 'https://backend.vaezprojects.ir';
 export const API_BASE_URL =
   Platform.OS === 'web' && typeof window !== 'undefined'
     ? ''
-    : (process.env.EXPO_PUBLIC_API_URL || REMOTE_BACKEND_URL);
+    : (process.env.EXPO_PUBLIC_API_URL || DOMAIN_BACKEND_URL);
 
 export class ApiError extends Error {
   statusCode: number;
