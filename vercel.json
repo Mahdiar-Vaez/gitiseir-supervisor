@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://backend.vaezprojects.ir/api/:path*"
+      "destination": "http://95.38.176.36:8333/api/:path*"
     },
     {
       "source": "/(.*)",
