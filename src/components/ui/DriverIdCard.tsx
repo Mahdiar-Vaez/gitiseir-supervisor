@@ -263,14 +263,23 @@ const styles = StyleSheet.create({
     paddingLeft: Spacing.md,
   },
   driverName: {
+    width: '100%',
+    textAlign: 'right',
+    writingDirection: 'rtl',
     fontSize: 17,
     letterSpacing: -0.3,
   },
   licenseType: {
+    width: '100%',
+    textAlign: 'right',
+    writingDirection: 'rtl',
     fontSize: 11,
     marginTop: 2,
   },
   vehicleText: {
+    width: '100%',
+    textAlign: 'right',
+    writingDirection: 'rtl',
     fontSize: 10.5,
     marginTop: 3,
   },

@@ -46,7 +46,7 @@ export default function LoginScreen() {
 
   // Step 1: 'mobile', Step 2: 'otp'
   const [step, setStep] = useState<'mobile' | 'otp'>('mobile');
-  const [mobileInput, setMobileInput] = useState<string>('09043793424');
+  const [mobileInput, setMobileInput] = useState<string>('');
   const [otpInput, setOtpInput] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);

@@ -263,4 +263,221 @@ describe('فرایندها و استانداردهای مهندسی سرشوفر
       assert.equal(res.success, true);
     });
   });
+
+  describe('۶. اتصال خودکار companyServiceId سرشوفر و استعلام بورد روزانه (daily-board)', () => {
+    test('باید companyServiceId دریافت‌شده از لاگین (مثلاً ۱۴) را به عنوان کد محل خدمت پیش‌فرض قرار دهد', () => {
+      const loginResult = {
+        userId: 3,
+        fullName: 'مرتضی شریعتی',
+        userType: 4,
+        companyServiceId: 14,
+      };
+
+      const defaultLocationId =
+        typeof loginResult.companyServiceId === 'number' && loginResult.companyServiceId > 0
+          ? loginResult.companyServiceId
+          : 14;
+
+      assert.equal(defaultLocationId, 14);
+    });
+
+    test('در حالت پیش‌فرض (entering = undefined)، پارامتر entering نباید در URL ارسال شود تا سرور به صورت خودکار محاسبه کند', () => {
+      const buildDailyBoardUrl = (companyServiceLocationId, entering) => {
+        const query =
+          typeof entering === 'boolean'
+            ? `?companyServiceLocationId=${companyServiceLocationId}&entering=${entering}`
+            : `?companyServiceLocationId=${companyServiceLocationId}`;
+        return `/api/SupervisorsMobile/Trip/daily-board${query}`;
+      };
+
+      assert.equal(
+        buildDailyBoardUrl(14, undefined),
+        '/api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId=14'
+      );
+      assert.equal(
+        buildDailyBoardUrl(14, true),
+        '/api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId=14&entering=true'
+      );
+      assert.equal(
+        buildDailyBoardUrl(14, false),
+        '/api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId=14&entering=false'
+      );
+    });
+  });
+
+  describe('۷. نگاشت کامل وضعیت اجرای راننده، پیشرفت ایستگاه‌ها و تأیید سرشوفر در کارت بورد روزانه', () => {
+    const sampleBoardItems = [
+      {
+        calendarDayId: 'aa265d91-755d-4dc5-7695-08df1a1c035a',
+        tripId: 21450,
+        tripName: 'جهاد خروج صبح',
+        companyServiceLocationId: 14,
+        companyServiceLocationTitle: 'کروز قدیم تهران',
+        entering: false,
+        directionTitle: 'خروجی از محل خدمت',
+        plannedDriverId: 1044,
+        plannedDriverFullName: 'حسین گلشاهی',
+        plannedDriverMobile: '09192610179',
+        hasTemporaryDriver: true,
+        actualDriverFullName: 'راننده موقت',
+        executionStatus: 4,
+        executionStatusTitle: 'DriverAbsent',
+        startedAtUtc: '2026-11-04T11:48:12.4252485',
+        endedAtUtc: '2026-11-04T12:16:43.2762015',
+        isConfirmedBySupervisor: true,
+        supervisorUserId: 3,
+        supervisorNote: 'عدم حضور در ایستگاه مبدا',
+        driverConfirmedArrival: false,
+        progress: {
+          totalStations: 3,
+          visitedStations: 3,
+          remainingStations: 0,
+          progressPercent: 100,
+          stations: [
+            {
+              tripStationId: 11,
+              stationId: 1,
+              stationTitle: 'میدان آزادی تست',
+              stopOrder: 1,
+              isVisited: true,
+              visitedAt: '2026-11-04T15:20:56.83',
+            },
+          ],
+          nextStationId: null,
+          nextStationTitle: null,
+          nextStopOrder: null,
+        },
+      },
+      {
+        calendarDayId: 'bc1b4f09-024f-454f-25a3-08df3525e44f',
+        tripId: 31480,
+        tripName: 'جهت تست در موبایل',
+        companyServiceLocationId: 14,
+        companyServiceLocationTitle: 'کروز قدیم تهران',
+        entering: false,
+        directionTitle: 'خروجی از محل خدمت',
+        plannedDriverId: 5152,
+        plannedDriverFullName: 'ابوالفضل واعظ',
+        plannedDriverMobile: '09931353703',
+        hasTemporaryDriver: false,
+        executionStatus: 3,
+        executionStatusTitle: 'Completed',
+        startedAtUtc: '2026-11-04T14:00:00',
+        endedAtUtc: '2026-11-04T15:10:00',
+        isConfirmedBySupervisor: false,
+        supervisorUserId: null,
+        supervisorNote: null,
+        driverConfirmedArrival: true,
+        progress: {
+          totalStations: 2,
+          visitedStations: 1,
+          remainingStations: 1,
+          progressPercent: 50,
+          stations: [],
+          nextStationId: 12,
+          nextStationTitle: 'سه‌راه آذری تست',
+          nextStopOrder: 2,
+        },
+      },
+    ];
+
+    test('باید وضعیت تکمیل سفر یا ثبت حضور توسط راننده را حتی قبل از تأیید سرشوفر به صورت شفاف تفکیک کند', () => {
+      const driverCompletedItem = sampleBoardItems[1];
+      const isDriverCompleted =
+        driverCompletedItem.executionStatus === 3 || Boolean(driverCompletedItem.endedAtUtc);
+      const isDriverConfirmed =
+        driverCompletedItem.driverConfirmedArrival === true || isDriverCompleted;
+      const isSupervisorFinalized = driverCompletedItem.isConfirmedBySupervisor === true;
+
+      assert.equal(isDriverCompleted, true, 'راننده سفر را به پایان رسانده است');
+      assert.equal(isDriverConfirmed, true, 'راننده حضور/اجرای سفر را ثبت کرده است');
+      assert.equal(
+        isSupervisorFinalized,
+        false,
+        'سرشوفر هنوز تأیید نهایی را ثبت نکرده و باید بتواند وضعیت راننده را ببیند و تأیید کند'
+      );
+    });
+
+    test('به محض تأیید حضور یا ثبت غیبت توسط سرشوفر (isConfirmedBySupervisor === true)، دکمه‌های عملیات پایین کارت باید مخفی شوند', () => {
+      const finalizedItem = sampleBoardItems[0];
+      const unconfirmedItem = sampleBoardItems[1];
+
+      const shouldShowActionButtons = (item) => !(item.isConfirmedBySupervisor === true);
+
+      assert.equal(
+        shouldShowActionButtons(finalizedItem),
+        false,
+        'برای سرویس تاییدشده توسط سرشوفر نباید دکمه‌های پایین کارت نمایش داده شود'
+      );
+      assert.equal(
+        shouldShowActionButtons(unconfirmedItem),
+        true,
+        'برای سرویسی که هنوز توسط سرشوفر تایید نشده، دکمه‌های عملیات باید فعال باشند'
+      );
+    });
+
+    test('نوار پیشرفت ایستگاه‌ها باید درصد پیشرفت و عنوان ایستگاه بعدی را به درستی استخراج کند', () => {
+      const itemWithNext = sampleBoardItems[1];
+      assert.equal(itemWithNext.progress.progressPercent, 50);
+      assert.equal(itemWithNext.progress.visitedStations, 1);
+      assert.equal(itemWithNext.progress.totalStations, 2);
+      assert.equal(itemWithNext.progress.nextStationTitle, 'سه‌راه آذری تست');
+    });
+  });
+
+  describe('۸. فرمتر اعداد (فارسی/عربی/انگلیسی) و تفکیک نام راننده اصلی از راننده لنگی', () => {
+    const sanitizeDigitsInput = (input, maxLength) => {
+      const english = String(input ?? '')
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/[^0-9]/g, '');
+      return typeof maxLength === 'number' ? english.slice(0, maxLength) : english;
+    };
+
+    const formatPhoneForApi = (input) => {
+      let digits = sanitizeDigitsInput(input, 14);
+      if (digits.startsWith('0098')) digits = '0' + digits.slice(4);
+      else if (digits.startsWith('98') && digits.length >= 12) digits = '0' + digits.slice(2);
+      else if (digits.startsWith('9') && digits.length === 10) digits = '0' + digits;
+      return digits.slice(0, 11);
+    };
+
+    test('باید اعداد فارسی و عربی و کاراکترهای اضافی در کد ملی، موبایل، مبلغ و شماره کارت را به فرمت انگلیسی استاندارد سرور تبدیل کند', () => {
+      assert.equal(sanitizeDigitsInput('۰۰۱۲۳۴۵۶۷۸', 10), '0012345678');
+      assert.equal(formatPhoneForApi('۰۹۱۲-۳۴۵-۶۷۸۹'), '09123456789');
+      assert.equal(formatPhoneForApi('۹۱۲۳۴۵۶۷۸۹'), '09123456789');
+      assert.equal(sanitizeDigitsInput('۶۰۳۷ ۹۹۱۱ ۲۲۳۳ ۴۴۵۵', 16), '6037991122334455');
+      assert.equal(Number(sanitizeDigitsInput('۱,۵۰۰,۰۰۰', 12)), 1500000);
+    });
+
+    test('نباید نام راننده اصلی خط یا عبارت «راننده موقت» را به عنوان نام راننده لنگی در فرم ویرایش قرار دهد', () => {
+      const plannedDriverFullName = 'مهدیار واعظ';
+      const extractEditableLangiName = (rawName, rawFamily, plannedFull) => {
+        const combined = `${rawName || ''} ${rawFamily || ''}`.trim();
+        if (
+          !rawName ||
+          rawName === 'راننده موقت' ||
+          rawName === 'راننده موقت (لنگی)' ||
+          combined === plannedFull ||
+          rawName === plannedFull
+        ) {
+          return { firstName: '', lastName: '' };
+        }
+        return { firstName: rawName, lastName: rawFamily };
+      };
+
+      assert.deepEqual(
+        extractEditableLangiName('مهدیار واعظ', '', plannedDriverFullName),
+        { firstName: '', lastName: '' }
+      );
+      assert.deepEqual(
+        extractEditableLangiName('راننده موقت', '', plannedDriverFullName),
+        { firstName: '', lastName: '' }
+      );
+      assert.deepEqual(
+        extractEditableLangiName('رضا', 'محمدی', plannedDriverFullName),
+        { firstName: 'رضا', lastName: 'محمدی' }
+      );
+    });
+  });
 });

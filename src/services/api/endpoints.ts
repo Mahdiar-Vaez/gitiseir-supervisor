@@ -38,8 +38,13 @@ export const API_ENDPOINTS = {
   },
 
   SUPERVISOR: {
-    DAILY_BOARD: (companyServiceLocationId: number, entering: boolean) =>
-      `/api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId=${companyServiceLocationId}&entering=${entering}`,
+    DAILY_BOARD: (companyServiceLocationId: number, entering?: boolean) => {
+      let url = `/api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId=${companyServiceLocationId}`;
+      if (entering !== undefined && entering !== null) {
+        url += `&entering=${entering}`;
+      }
+      return url;
+    },
     CONFIRM_ATTENDANCE: '/api/SupervisorsMobile/Trip/confirm-attendance',
     MARK_ABSENT: '/api/SupervisorsMobile/Trip/mark-driver-absent',
     TODAY_EXECUTION_SUMMARY: '/api/SupervisorsMobile/Trip/today-execution-summary',

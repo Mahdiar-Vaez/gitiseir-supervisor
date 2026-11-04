@@ -44,7 +44,7 @@ export async function getServiceLocationsApi(
 
 export async function getSupervisorDailyBoardApi(
   companyServiceLocationId: number,
-  entering: boolean,
+  entering?: boolean,
   token?: string | null
 ): Promise<ApiResponse<SupervisorDailyBoardResult>> {
   const endpoint = API_ENDPOINTS.SUPERVISOR.DAILY_BOARD(
@@ -111,6 +111,8 @@ export async function assignTemporaryDriverApi(
   payload: AssignTemporaryDriverRequest,
   token?: string | null
 ): Promise<ApiResponse<any>> {
+  const cleanCard = payload.cardNumber.trim();
+  const cleanAccount = (payload.cardAccountNumber ?? payload.cardNumber ?? '').trim();
   return await apiClient<any>(API_ENDPOINTS.SUPERVISOR.ASSIGN_TEMPORARY_DRIVER, {
     method: 'POST',
     body: JSON.stringify({
@@ -119,7 +121,8 @@ export async function assignTemporaryDriverApi(
       family: payload.family.trim(),
       phoneNumber: payload.phoneNumber.trim(),
       nationalCode: payload.nationalCode.trim(),
-      cardNumber: payload.cardNumber.trim(),
+      cardNumber: cleanCard,
+      cardAccountNumber: cleanAccount,
       reason: payload.reason.trim(),
       price: Number(payload.price) || 0,
     }),

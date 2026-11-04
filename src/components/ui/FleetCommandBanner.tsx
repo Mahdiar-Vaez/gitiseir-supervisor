@@ -5,7 +5,14 @@ import { useSarshoofer } from '@/context/SarshooferContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits } from '@/utils/persian-digits';
 
-export type DriverFilterType = 'all' | 'pending' | 'arrived' | 'not_arrived' | 'langi';
+export type DriverFilterType =
+  | 'all'
+  | 'pending'
+  | 'arrived'
+  | 'driver_confirmed'
+  | 'completed'
+  | 'not_arrived'
+  | 'langi';
 
 interface FleetCommandBannerProps {
   activeFilter: DriverFilterType;
@@ -36,10 +43,24 @@ export function FleetCommandBanner({
     },
     {
       id: 'arrived',
-      label: 'رسیده',
+      label: 'تأیید سرشوفر',
       count: stats.arrivedCount,
       activeColor: colors.success,
       activeBg: colors.successBg,
+    },
+    {
+      id: 'driver_confirmed',
+      label: 'ثبت راننده',
+      count: stats.driverConfirmedCount,
+      activeColor: '#3B82F6',
+      activeBg: 'rgba(59, 130, 246, 0.14)',
+    },
+    {
+      id: 'completed',
+      label: 'پایان سفر',
+      count: stats.completedByDriverCount,
+      activeColor: colors.gold,
+      activeBg: colors.goldBg,
     },
     {
       id: 'not_arrived',
@@ -167,10 +188,12 @@ const styles = StyleSheet.create({
   },
   kpiRow: {
     flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
     gap: 8,
   },
   kpiBox: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '29%',
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     paddingVertical: 8,

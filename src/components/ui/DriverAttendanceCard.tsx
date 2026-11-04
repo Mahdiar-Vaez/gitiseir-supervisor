@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   Pressable,
   Linking,
   ActivityIndicator,
+  Modal,
+  Platform,
 } from 'react-native';
 import {
   CheckCircle2,
@@ -14,11 +16,21 @@ import {
   Phone,
   Repeat,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+  MapPin,
+  Copy,
+  X,
+  Navigation,
+  UserCheck,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { TodayDriverItem, ArrivalStatus } from '@/services/api/types';
 import { toPersianDigits } from '@/utils/persian-digits';
+import { formatUtcToIranTime } from '@/utils/jalali';
 
 interface DriverAttendanceCardProps {
   item: TodayDriverItem;
@@ -27,49 +39,184 @@ interface DriverAttendanceCardProps {
   onPressLangiAction: (item: TodayDriverItem) => void;
 }
 
+function formatUtcTimeOnly(utcStr?: string | null): string {
+  const iranTime = formatUtcToIranTime(utcStr);
+  return iranTime ? toPersianDigits(iranTime) : '';
+}
+
+function formatStationVisitedTime(timeStr?: string | null): string {
+  if (!timeStr) return '';
+  const trimmed = timeStr.trim();
+  if (/([zZ]|[+-]\d{2}:?\d{2})$/.test(trimmed)) {
+    const iranTime = formatUtcToIranTime(trimmed);
+    return iranTime ? toPersianDigits(iranTime) : '';
+  }
+  const match = trimmed.match(/T(\d{2}:\d{2})/);
+  return match ? toPersianDigits(match[1]) : '';
+}
+
 export function DriverAttendanceCard({
   item,
   isProcessingGps = false,
   onPressArrivalAction,
   onPressLangiAction,
 }: DriverAttendanceCardProps) {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
+  const { showSuccess, showError } = useToast();
 
-  const handleCallDriver = (phone: string) => {
-    Linking.openURL(`tel:${phone}`).catch(() => {});
-  };
+  const [stationsExpanded, setStationsExpanded] = useState<boolean>(false);
+  const [phoneModalVisible, setPhoneModalVisible] = useState<boolean>(false);
 
-  const getStatusMeta = () => {
-    switch (item.arrivalStatus) {
-      case 'arrived':
-        return {
-          label: 'رسیده',
-          bg: colors.successBg,
-          color: colors.success,
-          borderColor: colors.success,
-          Icon: CheckCircle2,
-        };
-      case 'not_arrived':
-        return {
-          label: 'نرسیده',
-          bg: colors.dangerBg,
-          color: colors.danger,
-          borderColor: colors.danger,
-          Icon: XCircle,
-        };
-      default:
-        return {
-          label: 'در انتظار',
-          bg: colors.goldBg,
-          color: colors.gold,
-          borderColor: colors.borderGold,
-          Icon: Clock,
-        };
+  const phoneToDisplay =
+    item.driverPhone ||
+    item.plannedDriverMobile ||
+    item.actualDriverMobile ||
+    '';
+
+  const handleCopyPhone = async () => {
+    if (!phoneToDisplay) {
+      showError('شماره تماسی برای این راننده ثبت نشده است.', 'عدم وجود شماره');
+      return;
+    }
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(phoneToDisplay);
+      } else if (typeof navigator !== 'undefined' && (navigator as any).clipboard?.writeText) {
+        await (navigator as any).clipboard.writeText(phoneToDisplay);
+      }
+      showSuccess(
+        `شماره ${toPersianDigits(phoneToDisplay)} در حافظه کپی شد.`,
+        'کپی شماره تماس'
+      );
+      setPhoneModalVisible(false);
+    } catch {
+      showSuccess(
+        `شماره تماس راننده: ${toPersianDigits(phoneToDisplay)}`,
+        'شماره تماس'
+      );
     }
   };
 
-  const statusMeta = getStatusMeta();
+  const handleCallDriver = (phone: string) => {
+    if (!phone) {
+      showError('شماره تماسی برای این راننده ثبت نشده است.', 'عدم وجود شماره');
+      return;
+    }
+    Linking.openURL(`tel:${phone}`).catch(() => {});
+  };
+
+  // Supervisor confirmation status meta
+  const isSupervisorFinalized =
+    item.isConfirmedBySupervisor ||
+    item.arrivalStatus === 'arrived' ||
+    item.arrivalStatus === 'not_arrived';
+
+  const getSupervisorStatusMeta = () => {
+    if (item.arrivalStatus === 'not_arrived' || item.executionStatus === 4) {
+      return {
+        label: 'ثبت نرسیدن (غیبت)',
+        bg: colors.dangerBg,
+        color: colors.danger,
+        borderColor: colors.danger,
+        Icon: XCircle,
+      };
+    }
+    if (item.isConfirmedBySupervisor || item.arrivalStatus === 'arrived') {
+      return {
+        label: 'تأیید شده سرشوفر',
+        bg: colors.successBg,
+        color: colors.success,
+        borderColor: colors.success,
+        Icon: CheckCircle2,
+      };
+    }
+    return {
+      label: 'تأیید نشده سرشوفر',
+      bg: colors.goldBg,
+      color: colors.gold,
+      borderColor: colors.borderGold,
+      Icon: Clock,
+    };
+  };
+
+  // Driver execution & self-arrival status meta (so supervisor ALWAYS sees what the driver did)
+  const getDriverExecutionMeta = () => {
+    const startTimeStr = formatUtcTimeOnly(item.startedAtUtc);
+    const endTimeStr = formatUtcTimeOnly(item.endedAtUtc);
+
+    if (item.executionStatus === 4) {
+      return {
+        title: 'وضعیت راننده: عدم حضور در مبدأ سرویس',
+        detail: item.supervisorNote || 'غیبت راننده ثبت شده است',
+        color: colors.danger,
+        bg: 'rgba(244, 63, 94, 0.1)',
+        borderColor: 'rgba(244, 63, 94, 0.35)',
+      };
+    }
+
+    if (item.executionStatus === 3 || Boolean(item.endedAtUtc)) {
+      const timeRange =
+        startTimeStr && endTimeStr
+          ? ` (شروع: ${startTimeStr} • پایان: ${endTimeStr})`
+          : endTimeStr
+          ? ` (پایان در ساعت ${endTimeStr})`
+          : '';
+      return {
+        title: `وضعیت راننده: سفر پایان یافته و تکمیل شد ✓${timeRange}`,
+        detail: item.driverConfirmedArrival
+          ? 'راننده حضور و پایان سفر را در اپلیکیشن ثبت کرده است'
+          : 'پایان سفر توسط راننده ثبت شده است',
+        color: colors.success,
+        bg: 'rgba(16, 185, 129, 0.12)',
+        borderColor: 'rgba(16, 185, 129, 0.4)',
+      };
+    }
+
+    if (item.executionStatus === 1 || (Boolean(item.startedAtUtc) && !item.endedAtUtc)) {
+      const timeInfo = startTimeStr ? ` (شروع در ساعت ${startTimeStr})` : '';
+      return {
+        title: `وضعیت راننده: سفر شروع شده و در حال اجراست${timeInfo}`,
+        detail: item.driverConfirmedArrival
+          ? 'راننده اعلام حضور و شروع سفر را ثبت کرده است'
+          : 'راننده در مسیر ایستگاه‌ها در حال حرکت است',
+        color: '#38BDF8',
+        bg: 'rgba(56, 189, 248, 0.12)',
+        borderColor: 'rgba(56, 189, 248, 0.4)',
+      };
+    }
+
+    if (item.driverConfirmedArrival) {
+      return {
+        title: 'وضعیت راننده: راننده اعلام حضور کرده است ✓',
+        detail: 'راننده در اپلیکیشن خود رسیدن به مبدأ را ثبت کرده است',
+        color: '#38BDF8',
+        bg: 'rgba(56, 189, 248, 0.12)',
+        borderColor: 'rgba(56, 189, 248, 0.4)',
+      };
+    }
+
+    return {
+      title: 'وضعیت راننده: در انتظار شروع سفر توسط راننده',
+      detail: 'راننده هنوز شروع یا اعلام حضور را ثبت نکرده است',
+      color: colors.textSecondary,
+      bg: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+      borderColor: colors.border,
+    };
+  };
+
+  const statusMeta = getSupervisorStatusMeta();
   const StatusIcon = statusMeta.Icon;
+  const driverExecMeta = getDriverExecutionMeta();
+
+  const progress = item.progress;
+  const totalStations = progress?.totalStations ?? 0;
+  const visitedStations = progress?.visitedStations ?? 0;
+  const progressPercent =
+    progress?.progressPercent !== undefined
+      ? Math.min(100, Math.max(0, Math.round(progress.progressPercent)))
+      : totalStations > 0
+      ? Math.min(100, Math.round((visitedStations / totalStations) * 100))
+      : 0;
 
   return (
     <View
@@ -79,15 +226,17 @@ export function DriverAttendanceCard({
           backgroundColor: colors.card,
           borderColor:
             item.arrivalStatus === 'arrived'
-              ? 'rgba(16, 185, 129, 0.35)'
+              ? 'rgba(16, 185, 129, 0.4)'
               : item.arrivalStatus === 'not_arrived'
-              ? 'rgba(251, 113, 133, 0.38)'
+              ? 'rgba(251, 113, 133, 0.42)'
+              : item.executionStatus === 3
+              ? 'rgba(16, 185, 129, 0.35)'
               : colors.border,
           shadowColor: colors.shadow,
         },
       ]}
     >
-      {/* 1. Header Row: Driver Name & Plate (Right) | Time, Status & Call (Left) */}
+      {/* 1. Header Row: Driver Name & Plate (Right) | Supervisor Status & Phone Button (Left) */}
       <View style={styles.headerRow}>
         <View style={styles.driverInfoRight}>
           <Text
@@ -106,7 +255,8 @@ export function DriverAttendanceCard({
               { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
             ]}
           >
-            {item.vehicleType} • {toPersianDigits(item.licensePlate)}
+            {toPersianDigits(item.licensePlate)}
+            {item.directionTitle ? ` • ${item.directionTitle}` : ''}
           </Text>
         </View>
 
@@ -127,13 +277,13 @@ export function DriverAttendanceCard({
                 { color: statusMeta.color, fontFamily: Typography.fontFamily.bold },
               ]}
             >
-              {statusMeta.label} • {toPersianDigits(item.scheduledStartTime)}
+              {statusMeta.label}
             </Text>
           </View>
 
           <Pressable
-            onPress={() => handleCallDriver(item.driverPhone)}
-            accessibilityLabel={`تماس با ${item.driverFullName}`}
+            onPress={() => setPhoneModalVisible(true)}
+            accessibilityLabel={`مشاهده و کپی شماره ${item.driverFullName}`}
             style={({ pressed }) => [
               styles.callIconBtn,
               {
@@ -149,36 +299,335 @@ export function DriverAttendanceCard({
       </View>
 
       {/* 2. Route / Service Title */}
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.tripName,
-          { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
-        ]}
-      >
-        {item.tripName}
-      </Text>
-
-      {/* 3. Compact Confirmation Timestamp (if confirmed) */}
-      {item.gpsStamp && (
+      <View style={styles.tripTitleRow}>
         <Text
           numberOfLines={1}
+          style={[
+            styles.tripName,
+            { color: colors.gold, fontFamily: Typography.fontFamily.bold },
+          ]}
+        >
+          سرویس: {item.tripName}
+        </Text>
+        <Text
+          style={[
+            styles.tripIdBadge,
+            { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+          ]}
+        >
+          کد سرویس: {toPersianDigits(item.tripId)}
+        </Text>
+      </View>
+
+      {/* 3. Driver Live Status & Self-Arrival Banner (Always visible to Supervisor) */}
+      <View
+        style={[
+          styles.driverExecBox,
+          {
+            backgroundColor: driverExecMeta.bg,
+            borderColor: driverExecMeta.borderColor,
+          },
+        ]}
+      >
+        <View style={styles.driverExecTopRow}>
+          <UserCheck size={14} color={driverExecMeta.color} />
+          <Text
+            style={[
+              styles.driverExecTitle,
+              { color: driverExecMeta.color, fontFamily: Typography.fontFamily.bold },
+            ]}
+          >
+            {driverExecMeta.title}
+          </Text>
+        </View>
+
+        <View style={styles.badgesInlineRow}>
+          <View
+            style={[
+              styles.miniTag,
+              {
+                backgroundColor: item.driverConfirmedArrival
+                  ? 'rgba(16, 185, 129, 0.16)'
+                  : isDark
+                  ? 'rgba(255,255,255,0.05)'
+                  : '#E2E8F0',
+                borderColor: item.driverConfirmedArrival ? '#10B981' : colors.border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.miniTagText,
+                {
+                  color: item.driverConfirmedArrival ? '#10B981' : colors.textSecondary,
+                  fontFamily: Typography.fontFamily.medium,
+                },
+              ]}
+            >
+              {item.driverConfirmedArrival
+                ? 'ثبت حضور توسط راننده: بله ✓'
+                : 'ثبت حضور توسط راننده: خیر'}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.miniTag,
+              {
+                backgroundColor: item.isConfirmedBySupervisor
+                  ? item.arrivalStatus === 'not_arrived'
+                    ? 'rgba(244, 63, 94, 0.16)'
+                    : 'rgba(16, 185, 129, 0.16)'
+                  : 'rgba(245, 158, 11, 0.14)',
+                borderColor: item.isConfirmedBySupervisor
+                  ? item.arrivalStatus === 'not_arrived'
+                    ? colors.danger
+                    : colors.success
+                  : colors.gold,
+              },
+            ]}
+          >
+            <ShieldCheck
+              size={11}
+              color={
+                item.isConfirmedBySupervisor
+                  ? item.arrivalStatus === 'not_arrived'
+                    ? colors.danger
+                    : colors.success
+                  : colors.gold
+              }
+            />
+            <Text
+              style={[
+                styles.miniTagText,
+                {
+                  color: item.isConfirmedBySupervisor
+                    ? item.arrivalStatus === 'not_arrived'
+                      ? colors.danger
+                      : colors.success
+                    : colors.gold,
+                  fontFamily: Typography.fontFamily.bold,
+                },
+              ]}
+            >
+              {item.isConfirmedBySupervisor
+                ? item.arrivalStatus === 'not_arrived'
+                  ? 'سرشوفر: ثبت غیبت شده ✗'
+                  : 'سرشوفر: تأیید شده ✓'
+                : 'سرشوفر: تأیید نشده'}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* 4. Rich Station Progress Bar & Current/Next Station Indicator */}
+      {progress && totalStations > 0 && (
+        <Pressable
+          onPress={() => setStationsExpanded((prev) => !prev)}
+          style={[
+            styles.progressBox,
+            {
+              backgroundColor: isDark ? '#071318' : '#F8FAFC',
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.progressHeaderRow}>
+            <View style={styles.progressTitleGroup}>
+              <Navigation size={13} color={colors.command} />
+              <Text
+                style={[
+                  styles.progressTitleText,
+                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                پیشرفت ایستگاه‌ها: {toPersianDigits(visitedStations)} از{' '}
+                {toPersianDigits(totalStations)} ایستگاه
+              </Text>
+            </View>
+
+            <View style={styles.progressPercentBadge}>
+              <Text
+                style={[
+                  styles.progressPercentText,
+                  {
+                    color: progressPercent === 100 ? colors.success : colors.command,
+                    fontFamily: Typography.fontFamily.bold,
+                  },
+                ]}
+              >
+                ٪{toPersianDigits(progressPercent)}
+              </Text>
+              {stationsExpanded ? (
+                <ChevronUp size={14} color={colors.textSecondary} />
+              ) : (
+                <ChevronDown size={14} color={colors.textSecondary} />
+              )}
+            </View>
+          </View>
+
+          {/* Visual Progress Track */}
+          <View
+            style={[
+              styles.progressTrack,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'rgba(15, 23, 42, 0.08)',
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  width: `${progressPercent}%`,
+                  backgroundColor:
+                    progressPercent === 100
+                      ? colors.success
+                      : progressPercent > 0
+                      ? colors.command
+                      : colors.gold,
+                },
+              ]}
+            />
+          </View>
+
+          {/* Current / Next Station Callout */}
+          <View style={styles.nextStationRow}>
+            <MapPin
+              size={13}
+              color={
+                progress.remainingStations === 0 ? colors.success : colors.gold
+              }
+            />
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.nextStationText,
+                {
+                  color:
+                    progress.remainingStations === 0
+                      ? colors.success
+                      : colors.textSecondary,
+                  fontFamily: Typography.fontFamily.medium,
+                },
+              ]}
+            >
+              {progress.remainingStations === 0
+                ? 'تمامی ایستگاه‌های مسیر با موفقیت طی شده‌اند ✓'
+                : progress.nextStationTitle
+                ? `ایستگاه فعلی / بعدی: ${progress.nextStationTitle}${
+                    progress.nextStopOrder
+                      ? ` (ایستگاه ${toPersianDigits(progress.nextStopOrder)})`
+                      : ''
+                  }`
+                : `باقی‌مانده: ${toPersianDigits(progress.remainingStations)} ایستگاه`}
+            </Text>
+          </View>
+
+          {/* Expandable Stations List */}
+          {stationsExpanded &&
+            Array.isArray(progress.stations) &&
+            progress.stations.length > 0 && (
+              <View
+                style={[
+                  styles.stationsTimeline,
+                  { borderTopColor: colors.border },
+                ]}
+              >
+                {progress.stations.map((st) => {
+                  const visitedTime = formatStationVisitedTime(st.visitedAt);
+                  const isCurrentNext =
+                    !st.isVisited && st.stationId === progress.nextStationId;
+                  return (
+                    <View key={st.tripStationId} style={styles.stationRow}>
+                      <View style={styles.stationRightGroup}>
+                        <View
+                          style={[
+                            styles.stationDot,
+                            {
+                              backgroundColor: st.isVisited
+                                ? colors.success
+                                : isCurrentNext
+                                ? colors.gold
+                                : 'transparent',
+                              borderColor: st.isVisited
+                                ? colors.success
+                                : isCurrentNext
+                                ? colors.gold
+                                : colors.textMuted,
+                            },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.stationNameText,
+                            {
+                              color: st.isVisited
+                                ? colors.text
+                                : isCurrentNext
+                                ? colors.gold
+                                : colors.textSecondary,
+                              fontFamily:
+                                st.isVisited || isCurrentNext
+                                  ? Typography.fontFamily.bold
+                                  : Typography.fontFamily.regular,
+                            },
+                          ]}
+                        >
+                          {toPersianDigits(st.stopOrder)}. {st.stationTitle}
+                        </Text>
+                      </View>
+
+                      <Text
+                        style={[
+                          styles.stationStateText,
+                          {
+                            color: st.isVisited
+                              ? colors.success
+                              : isCurrentNext
+                              ? colors.gold
+                              : colors.textMuted,
+                            fontFamily: Typography.fontFamily.medium,
+                          },
+                        ]}
+                      >
+                        {st.isVisited
+                          ? visitedTime
+                            ? `طی شده (${visitedTime}) ✓`
+                            : 'طی شده ✓'
+                          : isCurrentNext
+                          ? 'ایستگاه پیش‌رو'
+                          : 'در انتظار'}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+        </Pressable>
+      )}
+
+      {/* 5. Supervisor Confirmation Note (if confirmed) */}
+      {(item.supervisorNote || item.gpsStamp?.note) && (
+        <Text
+          numberOfLines={2}
           style={[
             styles.stampLine,
             {
               color:
-                item.arrivalStatus === 'arrived' ? colors.success : colors.danger,
+                item.arrivalStatus === 'not_arrived' ? colors.danger : colors.success,
               fontFamily: Typography.fontFamily.medium,
             },
           ]}
         >
-          ✓ ثبت شده در ساعت {item.gpsStamp.verifiedAtTime} همراه با ارسال لوکیشن
-          {item.gpsStamp.note ? ` (${item.gpsStamp.note})` : ''}
+          ✓ یادداشت سرشوفر: {item.supervisorNote || item.gpsStamp?.note}
         </Text>
       )}
 
-      {/* 4. Compact Langi Status Badge (if Langi assigned) */}
-      {item.hasLangi && item.langi && (
+      {/* 6. Compact Langi Status Badge (if Langi assigned) */}
+      {item.hasLangi && (
         <Pressable
           onPress={() => onPressLangiAction(item)}
           style={({ pressed }) => [
@@ -199,124 +648,272 @@ export function DriverAttendanceCard({
                 { color: colors.langi, fontFamily: Typography.fontFamily.bold },
               ]}
             >
-              لنگی: {item.langi.name} {item.langi.family} •{' '}
-              {item.langi.fullyAcceptedAndPayed
-                ? 'تایید نهایی شده'
-                : 'منتظر اعلام فرایند'}
+              {(() => {
+                const candidate = item.langi
+                  ? `${item.langi.name || ''} ${item.langi.family || ''}`.trim()
+                  : (item.actualDriverFullName || '').trim();
+                const isDistinct =
+                  Boolean(candidate) &&
+                  candidate !== (item.plannedDriverFullName || item.driverFullName).trim() &&
+                  candidate !== 'راننده موقت' &&
+                  candidate !== 'راننده موقت (لنگی)';
+                return isDistinct
+                  ? `راننده لنگی (جایگزین): ${candidate}`
+                  : 'دارای راننده موقت (لنگی) • مشاهده / ویرایش مشخصات';
+              })()}
             </Text>
           </View>
           <ChevronLeft size={13} color={colors.langi} />
         </Pressable>
       )}
 
-      {/* 5. Action Buttons: Confirm Arrived | Confirm Not Arrived | Request Langi */}
-      <View style={styles.actionsBar}>
-        <Pressable
-          onPress={() => onPressArrivalAction(item, 'arrived')}
-          disabled={isProcessingGps}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.actionBtn,
-            {
-              backgroundColor:
-                item.arrivalStatus === 'arrived'
-                  ? colors.success
-                  : 'rgba(16, 185, 129, 0.14)',
-              borderColor: colors.success,
-              opacity: pressed || isProcessingGps ? 0.75 : 1,
-            },
-          ]}
-        >
-          {isProcessingGps ? (
-            <ActivityIndicator
-              size="small"
-              color={item.arrivalStatus === 'arrived' ? '#071318' : colors.success}
+      {/* 7. Action Buttons: rendered when NOT yet confirmed, OR allow Langi assignment when driver is marked absent */}
+      {!isSupervisorFinalized ? (
+        <View style={styles.actionsBar}>
+          <Pressable
+            onPress={() => onPressArrivalAction(item, 'arrived')}
+            disabled={isProcessingGps}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.actionBtn,
+              {
+                backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                borderColor: colors.success,
+                opacity: pressed || isProcessingGps ? 0.75 : 1,
+              },
+            ]}
+          >
+            {isProcessingGps ? (
+              <ActivityIndicator size="small" color={colors.success} />
+            ) : (
+              <>
+                <CheckCircle2 size={14} color={colors.success} />
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    {
+                      color: colors.success,
+                      fontFamily: Typography.fontFamily.bold,
+                    },
+                  ]}
+                >
+                  تایید رسیدن
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => onPressArrivalAction(item, 'not_arrived')}
+            disabled={isProcessingGps}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.actionBtn,
+              {
+                backgroundColor: 'rgba(244, 63, 94, 0.12)',
+                borderColor: colors.danger,
+                opacity: pressed || isProcessingGps ? 0.75 : 1,
+              },
+            ]}
+          >
+            <XCircle size={14} color={colors.danger} />
+            <Text
+              style={[
+                styles.actionBtnText,
+                {
+                  color: colors.danger,
+                  fontFamily: Typography.fontFamily.bold,
+                },
+              ]}
+            >
+              ثبت نرسیدن
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => onPressLangiAction(item)}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.actionBtn,
+              {
+                backgroundColor: item.hasLangi ? colors.langi : colors.langiBg,
+                borderColor: colors.langi,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Repeat
+              size={13}
+              color={item.hasLangi ? '#071318' : colors.langi}
             />
-          ) : (
-            <>
-              <CheckCircle2
-                size={14}
-                color={item.arrivalStatus === 'arrived' ? '#071318' : colors.success}
-              />
+            <Text
+              style={[
+                styles.actionBtnText,
+                {
+                  color: item.hasLangi ? '#071318' : colors.langi,
+                  fontFamily: Typography.fontFamily.bold,
+                },
+              ]}
+            >
+              {item.hasLangi ? 'وضعیت لنگی' : 'درخواست لنگی'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : (item.arrivalStatus === 'not_arrived' || item.executionStatus === 4) &&
+        !item.hasLangi ? (
+        <View style={styles.actionsBar}>
+          <Pressable
+            onPress={() => onPressLangiAction(item)}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.actionBtn,
+              {
+                backgroundColor: colors.langiBg,
+                borderColor: colors.langi,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Repeat size={14} color={colors.langi} />
+            <Text
+              style={[
+                styles.actionBtnText,
+                {
+                  color: colors.langi,
+                  fontFamily: Typography.fontFamily.bold,
+                },
+              ]}
+            >
+              ثبت راننده لنگی (جایگزین) برای این سرویس
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/* Phone Number View & Copy Modal */}
+      <Modal
+        visible={phoneModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhoneModalVisible(false)}
+      >
+        <Pressable
+          style={styles.phoneModalOverlay}
+          onPress={() => setPhoneModalVisible(false)}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={[
+              styles.phoneModalCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.commandBorder,
+              },
+            ]}
+          >
+            <View style={styles.phoneModalHeader}>
+              <Pressable
+                onPress={() => setPhoneModalVisible(false)}
+                hitSlop={8}
+                style={styles.phoneModalCloseBtn}
+              >
+                <X size={18} color={colors.textSecondary} />
+              </Pressable>
               <Text
                 style={[
-                  styles.actionBtnText,
+                  styles.phoneModalTitle,
+                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                اطلاعات تماس راننده
+              </Text>
+            </View>
+
+            <Text
+              style={[
+                styles.phoneModalDriverName,
+                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+              ]}
+            >
+              {item.driverFullName}
+            </Text>
+
+            <View
+              style={[
+                styles.phoneBox,
+                {
+                  backgroundColor: isDark ? '#071318' : '#F1F5F9',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                selectable
+                style={[
+                  styles.phoneDigitsText,
+                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                {phoneToDisplay
+                  ? toPersianDigits(phoneToDisplay)
+                  : 'شماره ثبت نشده'}
+              </Text>
+            </View>
+
+            <View style={styles.phoneModalActions}>
+              <Pressable
+                onPress={handleCopyPhone}
+                style={[
+                  styles.phoneActionBtn,
                   {
-                    color:
-                      item.arrivalStatus === 'arrived' ? '#071318' : colors.success,
-                    fontFamily: Typography.fontFamily.bold,
+                    backgroundColor: colors.command,
+                    borderColor: colors.command,
                   },
                 ]}
               >
-                {item.arrivalStatus === 'arrived' ? 'رسیده ✓' : 'تایید رسیدن'}
-              </Text>
-            </>
-          )}
-        </Pressable>
+                <Copy size={15} color="#071318" />
+                <Text
+                  style={[
+                    styles.phoneActionBtnText,
+                    { color: '#071318', fontFamily: Typography.fontFamily.bold },
+                  ]}
+                >
+                  کپی شماره همراه
+                </Text>
+              </Pressable>
 
-        <Pressable
-          onPress={() => onPressArrivalAction(item, 'not_arrived')}
-          disabled={isProcessingGps}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.actionBtn,
-            {
-              backgroundColor:
-                item.arrivalStatus === 'not_arrived'
-                  ? colors.danger
-                  : 'rgba(244, 63, 94, 0.12)',
-              borderColor: colors.danger,
-              opacity: pressed || isProcessingGps ? 0.75 : 1,
-            },
-          ]}
-        >
-          <XCircle
-            size={14}
-            color={item.arrivalStatus === 'not_arrived' ? '#FFFFFF' : colors.danger}
-          />
-          <Text
-            style={[
-              styles.actionBtnText,
-              {
-                color:
-                  item.arrivalStatus === 'not_arrived' ? '#FFFFFF' : colors.danger,
-                fontFamily: Typography.fontFamily.bold,
-              },
-            ]}
-          >
-            {item.arrivalStatus === 'not_arrived' ? 'نرسیده ✗' : 'ثبت نرسیدن'}
-          </Text>
+              {phoneToDisplay ? (
+                <Pressable
+                  onPress={() => {
+                    setPhoneModalVisible(false);
+                    handleCallDriver(phoneToDisplay);
+                  }}
+                  style={[
+                    styles.phoneActionBtn,
+                    {
+                      backgroundColor: colors.commandBg,
+                      borderColor: colors.command,
+                    },
+                  ]}
+                >
+                  <Phone size={15} color={colors.command} />
+                  <Text
+                    style={[
+                      styles.phoneActionBtnText,
+                      {
+                        color: colors.command,
+                        fontFamily: Typography.fontFamily.bold,
+                      },
+                    ]}
+                  >
+                    تماس تلفنی
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </Pressable>
         </Pressable>
-
-        <Pressable
-          onPress={() => onPressLangiAction(item)}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.actionBtn,
-            {
-              backgroundColor: item.hasLangi ? colors.langi : colors.langiBg,
-              borderColor: colors.langi,
-              opacity: pressed ? 0.75 : 1,
-            },
-          ]}
-        >
-          <Repeat
-            size={13}
-            color={item.hasLangi ? '#071318' : colors.langi}
-          />
-          <Text
-            style={[
-              styles.actionBtnText,
-              {
-                color: item.hasLangi ? '#071318' : colors.langi,
-                fontFamily: Typography.fontFamily.bold,
-              },
-            ]}
-          >
-            {item.hasLangi ? 'وضعیت لنگی' : 'درخواست لنگی'}
-          </Text>
-        </Pressable>
-      </View>
+      </Modal>
     </View>
   );
 }
@@ -344,12 +941,16 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   driverName: {
+    width: '100%',
     fontSize: 15,
     textAlign: 'right',
+    writingDirection: 'rtl',
   },
   vehicleSubText: {
+    width: '100%',
     fontSize: 11.5,
     textAlign: 'right',
+    writingDirection: 'rtl',
   },
   headerLeftActions: {
     flexDirection: 'row',
@@ -366,7 +967,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statusPillText: {
-    fontSize: 11,
+    fontSize: 10.5,
   },
   callIconBtn: {
     width: 32,
@@ -376,9 +977,131 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  tripTitleRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
   tripName: {
-    fontSize: 12.5,
+    flex: 1,
+    fontSize: 13,
     textAlign: 'right',
+  },
+  tripIdBadge: {
+    fontSize: 11,
+  },
+  driverExecBox: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  driverExecTopRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+  },
+  driverExecTitle: {
+    flex: 1,
+    fontSize: 12,
+    textAlign: 'right',
+  },
+  badgesInlineRow: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  miniTag: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+  },
+  miniTagText: {
+    fontSize: 10.5,
+  },
+  progressBox: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: 10,
+    gap: 7,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressTitleGroup: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
+  },
+  progressTitleText: {
+    fontSize: 11.5,
+  },
+  progressPercentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  progressPercentText: {
+    fontSize: 12,
+  },
+  progressTrack: {
+    height: 7,
+    borderRadius: 4,
+    overflow: 'hidden',
+    flexDirection: 'row-reverse',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  nextStationRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
+  },
+  nextStationText: {
+    flex: 1,
+    fontSize: 11.5,
+    textAlign: 'right',
+  },
+  stationsTimeline: {
+    borderTopWidth: 1,
+    paddingTop: 8,
+    marginTop: 2,
+    gap: 6,
+  },
+  stationRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stationRightGroup: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  stationDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 1.5,
+  },
+  stationNameText: {
+    fontSize: 11.5,
+    textAlign: 'right',
+  },
+  stationStateText: {
+    fontSize: 10.5,
   },
   stampLine: {
     fontSize: 11,
@@ -422,5 +1145,65 @@ const styles = StyleSheet.create({
   },
   actionBtnText: {
     fontSize: 11,
+  },
+  phoneModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.68)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  phoneModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    padding: 16,
+    gap: 12,
+  },
+  phoneModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  phoneModalCloseBtn: {
+    padding: 4,
+  },
+  phoneModalTitle: {
+    fontSize: 15,
+    textAlign: 'right',
+  },
+  phoneModalDriverName: {
+    fontSize: 13,
+    textAlign: 'right',
+  },
+  phoneBox: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  phoneDigitsText: {
+    fontSize: 19,
+    letterSpacing: 1.2,
+  },
+  phoneModalActions: {
+    flexDirection: 'row-reverse',
+    gap: 8,
+  },
+  phoneActionBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  phoneActionBtnText: {
+    fontSize: 12,
   },
 });

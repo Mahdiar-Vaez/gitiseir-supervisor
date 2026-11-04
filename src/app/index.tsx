@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { router } from 'expo-router';
 import {
   Search,
   X,
@@ -18,12 +17,12 @@ import {
   MapPin,
   ArrowDownLeft,
   ArrowUpRight,
-  RefreshCw,
+  Clock,
 } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useSarshoofer } from '@/context/SarshooferContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
-import { toPersianDigits, toEnglishDigits } from '@/utils/persian-digits';
+import { toPersianDigits } from '@/utils/persian-digits';
 import { TodayDriverItem, ArrivalStatus } from '@/services/api/types';
 import { AppHeader } from '@/components/ui/AppHeader';
 import {
@@ -39,10 +38,7 @@ export default function TodayDriversScreen() {
   const {
     drivers,
     dailyBoard,
-    serviceLocations,
-    companyServiceLocationId,
     entering,
-    setCompanyServiceLocationId,
     setEntering,
     loading,
     refreshing,
@@ -52,9 +48,6 @@ export default function TodayDriversScreen() {
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<DriverFilterType>('all');
-  const [locationInput, setLocationInput] = useState<string>(
-    String(companyServiceLocationId)
-  );
 
   // Arrival Confirmation Modal State
   const [confirmModalVisible, setConfirmModalVisible] = useState<boolean>(false);
@@ -72,8 +65,29 @@ export default function TodayDriversScreen() {
   const filteredDrivers = useMemo(() => {
     return drivers.filter((item) => {
       if (activeFilter === 'pending' && item.arrivalStatus !== 'pending') return false;
-      if (activeFilter === 'arrived' && item.arrivalStatus !== 'arrived') return false;
-      if (activeFilter === 'not_arrived' && item.arrivalStatus !== 'not_arrived')
+      if (
+        activeFilter === 'arrived' &&
+        !(item.isConfirmedBySupervisor === true && item.arrivalStatus === 'arrived')
+      )
+        return false;
+      if (
+        activeFilter === 'driver_confirmed' &&
+        !(
+          item.driverConfirmedArrival === true ||
+          item.executionStatus === 1 ||
+          item.executionStatus === 3
+        )
+      )
+        return false;
+      if (
+        activeFilter === 'completed' &&
+        !(item.executionStatus === 3 || Boolean(item.endedAtUtc))
+      )
+        return false;
+      if (
+        activeFilter === 'not_arrived' &&
+        !(item.arrivalStatus === 'not_arrived' || item.executionStatus === 4)
+      )
         return false;
       if (activeFilter === 'langi' && !item.hasLangi) return false;
 
@@ -91,13 +105,6 @@ export default function TodayDriversScreen() {
       return true;
     });
   }, [drivers, activeFilter, searchQuery]);
-
-  const handleApplyLocationId = () => {
-    const parsed = Number(toEnglishDigits(locationInput).replace(/\D/g, ''));
-    if (parsed > 0) {
-      setCompanyServiceLocationId(parsed);
-    }
-  };
 
   const handleOpenArrivalModal = (
     driverItem: TodayDriverItem,
@@ -130,7 +137,8 @@ export default function TodayDriversScreen() {
 
       if (openLangiAfter && targetDriver) {
         setTimeout(() => {
-          router.navigate('/calendar' as any);
+          setSelectedDriverForLangi(targetDriver);
+          setLangiModalVisible(true);
         }, 220);
       }
     } finally {
@@ -139,12 +147,8 @@ export default function TodayDriversScreen() {
   };
 
   const handleOpenLangiModal = (driverItem?: TodayDriverItem) => {
-    if (driverItem && driverItem.hasLangi) {
-      setSelectedDriverForLangi(driverItem);
-      setLangiModalVisible(true);
-    } else {
-      router.navigate('/calendar' as any);
-    }
+    setSelectedDriverForLangi(driverItem || drivers[0] || null);
+    setLangiModalVisible(true);
   };
 
   return (
@@ -174,65 +178,29 @@ export default function TodayDriversScreen() {
             },
           ]}
         >
-          <View style={styles.dailyBoardHeaderRow}>
-            <View style={styles.directionToggleGroup}>
-              <TouchableOpacity
-                onPress={() => setEntering(true)}
+          {/* Row 1: Title neatly aligned to the right without overflowing */}
+          <View style={styles.dailyBoardTitleBar}>
+            <View
+              style={[
+                styles.boardModeBadge,
+                {
+                  backgroundColor: isDark ? '#071318' : '#F0FDFA',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
                 style={[
-                  styles.dirBtn,
-                  {
-                    backgroundColor: entering ? colors.command : 'transparent',
-                    borderColor: entering ? colors.command : colors.border,
-                  },
+                  styles.boardModeBadgeText,
+                  { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
                 ]}
               >
-                <ArrowDownLeft
-                  size={13}
-                  color={entering ? '#071318' : colors.textSecondary}
-                />
-                <Text
-                  style={[
-                    styles.dirBtnText,
-                    {
-                      color: entering ? '#071318' : colors.textSecondary,
-                      fontFamily: entering
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  سرویس‌های ورودی
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setEntering(false)}
-                style={[
-                  styles.dirBtn,
-                  {
-                    backgroundColor: !entering ? colors.gold : 'transparent',
-                    borderColor: !entering ? colors.gold : colors.border,
-                  },
-                ]}
-              >
-                <ArrowUpRight
-                  size={13}
-                  color={!entering ? '#071318' : colors.textSecondary}
-                />
-                <Text
-                  style={[
-                    styles.dirBtnText,
-                    {
-                      color: !entering ? '#071318' : colors.textSecondary,
-                      fontFamily: !entering
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  سرویس‌های خروجی
-                </Text>
-              </TouchableOpacity>
+                {entering === undefined
+                  ? 'جهت خودکار بر اساس ساعت'
+                  : entering
+                  ? 'فیلتر ورودی'
+                  : 'فیلتر خروجی'}
+              </Text>
             </View>
 
             <View style={styles.boardTitleGroup}>
@@ -248,98 +216,104 @@ export default function TodayDriversScreen() {
             </View>
           </View>
 
-          {/* Service Location Selector or ID Input */}
-          {serviceLocations.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.locationsChipsRow}
-            >
-              {serviceLocations.map((loc) => {
-                const active = loc.id === companyServiceLocationId;
-                return (
-                  <TouchableOpacity
-                    key={loc.id}
-                    onPress={() => {
-                      setCompanyServiceLocationId(loc.id);
-                      setLocationInput(String(loc.id));
-                    }}
-                    style={[
-                      styles.locChip,
-                      {
-                        backgroundColor: active
-                          ? colors.commandBg
-                          : isDark
-                          ? '#071318'
-                          : '#F8FAFC',
-                        borderColor: active ? colors.command : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.locChipText,
-                        {
-                          color: active ? colors.command : colors.textSecondary,
-                          fontFamily: active
-                            ? Typography.fontFamily.bold
-                            : Typography.fontFamily.regular,
-                        },
-                      ]}
-                    >
-                      {loc.title} ({toPersianDigits(loc.id)})
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          ) : null}
-
-          <View style={styles.locationInputRow}>
+          {/* Row 2: Direction Toggle Group (Automatic / Incoming / Outgoing) */}
+          <View style={styles.directionToggleGroup}>
             <TouchableOpacity
-              onPress={handleApplyLocationId}
+              onPress={() => setEntering(undefined)}
               style={[
-                styles.applyLocBtn,
-                { backgroundColor: colors.command },
+                styles.dirBtn,
+                {
+                  backgroundColor:
+                    entering === undefined ? colors.command : 'transparent',
+                  borderColor:
+                    entering === undefined ? colors.command : colors.border,
+                },
               ]}
             >
-              <RefreshCw size={13} color="#071318" />
+              <Clock
+                size={12}
+                color={entering === undefined ? '#071318' : colors.textSecondary}
+              />
               <Text
                 style={[
-                  styles.applyLocBtnText,
-                  { fontFamily: Typography.fontFamily.bold },
+                  styles.dirBtnText,
+                  {
+                    color:
+                      entering === undefined ? '#071318' : colors.textSecondary,
+                    fontFamily:
+                      entering === undefined
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
                 ]}
               >
-                استعلام بورد
+                خودکار
               </Text>
             </TouchableOpacity>
 
-            <TextInput
-              value={locationInput}
-              onChangeText={setLocationInput}
-              onSubmitEditing={handleApplyLocationId}
-              keyboardType="numeric"
-              placeholder="کد محل خدمت (مثال: 18)"
-              placeholderTextColor={colors.textMuted}
+            <TouchableOpacity
+              onPress={() => setEntering(true)}
               style={[
-                styles.locIdInput,
+                styles.dirBtn,
                 {
-                  backgroundColor: isDark ? '#071318' : '#F8FAFC',
-                  borderColor: colors.border,
-                  color: colors.text,
-                  fontFamily: Typography.fontFamily.bold,
+                  backgroundColor:
+                    entering === true ? colors.command : 'transparent',
+                  borderColor:
+                    entering === true ? colors.command : colors.border,
                 },
               ]}
-            />
+            >
+              <ArrowDownLeft
+                size={13}
+                color={entering === true ? '#071318' : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.dirBtnText,
+                  {
+                    color: entering === true ? '#071318' : colors.textSecondary,
+                    fontFamily:
+                      entering === true
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                سرویس‌های ورودی
+              </Text>
+            </TouchableOpacity>
 
-            <Text
+            <TouchableOpacity
+              onPress={() => setEntering(false)}
               style={[
-                styles.locIdLabel,
-                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+                styles.dirBtn,
+                {
+                  backgroundColor:
+                    entering === false ? colors.gold : 'transparent',
+                  borderColor:
+                    entering === false ? colors.gold : colors.border,
+                },
               ]}
             >
-              کد محل خدمت:
-            </Text>
+              <ArrowUpRight
+                size={13}
+                color={entering === false ? '#071318' : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.dirBtnText,
+                  {
+                    color: entering === false ? '#071318' : colors.textSecondary,
+                    fontFamily:
+                      entering === false
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                سرویس‌های خروجی
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {dailyBoard ? (
@@ -379,7 +353,7 @@ export default function TodayDriversScreen() {
         <FleetCommandBanner
           activeFilter={activeFilter}
           onSelectFilter={setActiveFilter}
-          onOpenNewLangi={() => router.navigate('/calendar' as any)}
+          onOpenNewLangi={() => handleOpenLangiModal()}
         />
 
         {/* 2. Search Input */}
@@ -492,8 +466,8 @@ export default function TodayDriversScreen() {
                 ]}
               >
                 {dailyBoard
-                  ? `برای محل خدمت «${dailyBoard.companyServiceLocationTitle}» (${dailyBoard.directionTitle}) در حال حاضر ۰ سرویس در سرور ثبت شده است. همچنین می‌توانید از تب «تقویم کاری» سایر روزها را بررسی و مدیریت کنید.`
-                  : 'می‌توانید کد محل خدمت دیگری را استعلام کنید یا از تب «تقویم کاری» سفرهای هر روز را مشاهده و مدیریت نمایید.'}
+                  ? `برای محل خدمت «${dailyBoard.companyServiceLocationTitle}» (${dailyBoard.directionTitle}) در حال حاضر ۰ سرویس در سرور ثبت شده است.`
+                  : 'در حال حاضر سرویسی برای محل خدمت شما در این شیفت ثبت نشده است.'}
               </Text>
             </View>
           )}
@@ -511,6 +485,9 @@ export default function TodayDriversScreen() {
 
       {/* Modal 2: Langi Request / Edit Sheet */}
       <LangiRequestModal
+        key={`${selectedDriverForLangi?.tripWorkCalendarId || 'general'}-${
+          langiModalVisible ? 'open' : 'closed'
+        }`}
         visible={langiModalVisible}
         preselectedDriver={selectedDriverForLangi}
         onClose={() => setLangiModalVisible(false)}
@@ -534,29 +511,44 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 10,
   },
-  dailyBoardHeaderRow: {
+  dailyBoardTitleBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
+  },
+  boardModeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  boardModeBadgeText: {
+    fontSize: 10.5,
   },
   boardTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 6,
   },
   boardTitleText: {
-    fontSize: 13,
+    fontSize: 13.5,
+    textAlign: 'right',
   },
   directionToggleGroup: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
     gap: 6,
   },
   dirBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
   },

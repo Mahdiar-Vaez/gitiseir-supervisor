@@ -38,6 +38,7 @@ export interface AuthUser {
   otpExpire: string | null;
   company: any | null;
   driverId: number | null;
+  companyServiceId?: number | null;
   userRoles: UserRole[];
 }
 
@@ -47,6 +48,7 @@ export interface LoginResult {
   isDriver: boolean;
   isAdmin: boolean;
   isLeadDriver: boolean;
+  companyServiceId?: number | null;
   tokenExpireDate: string;
 }
 
@@ -234,11 +236,59 @@ export interface CompanyServiceLocation {
   isActive?: boolean;
 }
 
+export interface DailyBoardStationProgressItem {
+  tripStationId: number;
+  stationId: number;
+  stationTitle: string;
+  stopOrder: number;
+  isVisited: boolean;
+  visitedAt: string | null;
+  actualLatitude: number | null;
+  actualLongitude: number | null;
+}
+
+export interface DailyBoardTripProgress {
+  totalStations: number;
+  visitedStations: number;
+  remainingStations: number;
+  progressPercent: number;
+  stations: DailyBoardStationProgressItem[];
+  nextStationId: number | null;
+  nextStationTitle: string | null;
+  nextStopOrder: number | null;
+}
+
 export interface SupervisorDailyBoardItem {
   calendarDayId?: string;
   tripWorkCalendarId?: string;
   tripId: number;
   tripName: string;
+  companyServiceLocationId?: number;
+  companyServiceLocationTitle?: string;
+  entering?: boolean;
+  directionTitle?: string;
+  plannedDriverId?: number | null;
+  plannedDriverFullName?: string | null;
+  plannedDriverMobile?: string | null;
+  plannedDriverIsActiveForLocation?: boolean;
+  hasTemporaryDriver?: boolean;
+  temporaryDriverId?: string | null;
+  temporaryDriverFullName?: string | null;
+  temporaryDriverPhone?: string | null;
+  actualDriverFullName?: string | null;
+  actualDriverMobile?: string | null;
+  executionStatus?: number;
+  executionStatusTitle?: string | null;
+  vehicleId?: number | null;
+  vehicleLicensePlate?: string | null;
+  startedAtUtc?: string | null;
+  endedAtUtc?: string | null;
+  isConfirmedBySupervisor?: boolean;
+  supervisorUserId?: number | null;
+  supervisorConfirmedAtUtc?: string | null;
+  supervisorNote?: string | null;
+  driverConfirmedArrival?: boolean;
+  progress?: DailyBoardTripProgress | null;
   driverId?: number | null;
   driverFullName?: string | null;
   driverTel?: string | null;
@@ -251,12 +301,11 @@ export interface SupervisorDailyBoardItem {
   outbound?: TripLegInfo | null;
   inbound?: TripLegInfo | null;
   price?: number | null;
-  status: number;
+  status?: number;
   statusDisplay?: string | null;
   isAttendanceConfirmed?: boolean;
   attendanceConfirmedAtUtc?: string | null;
   attendanceNote?: string | null;
-  hasTemporaryDriver?: boolean;
   temporaryDriver?: TemporaryDriverInfo | null;
   canSetTemporaryDriver?: boolean;
 }
@@ -321,6 +370,7 @@ export interface AssignTemporaryDriverRequest {
   phoneNumber: string;
   nationalCode: string;
   cardNumber: string;
+  cardAccountNumber?: string;
   reason: string;
   price: number;
 }
@@ -382,6 +432,10 @@ export interface TodayDriverItem {
   driverId: number;
   driverFullName: string;
   driverPhone: string;
+  plannedDriverFullName?: string;
+  plannedDriverMobile?: string;
+  actualDriverFullName?: string;
+  actualDriverMobile?: string;
   vehicleType: string;
   vehicleColor: string;
   licensePlate: string;
@@ -389,6 +443,17 @@ export interface TodayDriverItem {
   stationsCount: number;
   price: number;
   arrivalStatus: ArrivalStatus;
+  isConfirmedBySupervisor: boolean;
+  supervisorNote: string | null;
+  supervisorConfirmedAtUtc?: string | null;
+  driverConfirmedArrival: boolean;
+  executionStatus: number;
+  executionStatusTitle: string;
+  startedAtUtc: string | null;
+  endedAtUtc: string | null;
+  entering?: boolean;
+  directionTitle?: string;
+  progress: DailyBoardTripProgress | null;
   gpsStamp: GpsVerificationStamp | null;
   hasLangi: boolean;
   canRequestLangi: boolean;

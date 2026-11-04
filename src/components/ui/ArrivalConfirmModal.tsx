@@ -14,7 +14,6 @@ import { DelayMinutesSelector } from './attendance/DelayMinutesSelector';
 import {
   CheckCircle2,
   XCircle,
-  Navigation,
   X,
   Repeat,
   Clock,
@@ -22,7 +21,6 @@ import {
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, BorderRadius } from '@/constants/theme';
 import { TodayDriverItem, ArrivalStatus } from '@/services/api/types';
-import { getCurrentCoordinates, Coordinates } from '@/services/location/gps';
 import { toPersianDigits } from '@/utils/persian-digits';
 
 interface ArrivalConfirmModalProps {
@@ -66,8 +64,6 @@ export function ArrivalConfirmModal({
   const [isDelayed, setIsDelayed] = useState<boolean>(false);
   const [delayMinutes, setDelayMinutes] = useState<number>(10);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [previewCoords, setPreviewCoords] = useState<Coordinates | null>(null);
-  const [fetchingGps, setFetchingGps] = useState<boolean>(false);
 
   const isArrived = targetStatus === 'arrived';
   const presets = isArrived ? ARRIVED_PRESET_NOTES : ABSENT_PRESET_NOTES;
@@ -78,10 +74,6 @@ export function ArrivalConfirmModal({
       setOpenLangiAfter(!isArrived && !driverItem.hasLangi);
       setIsDelayed(false);
       setDelayMinutes(10);
-      setFetchingGps(true);
-      getCurrentCoordinates()
-        .then((coords) => setPreviewCoords(coords))
-        .finally(() => setFetchingGps(false));
     }
   };
 
@@ -165,59 +157,6 @@ export function ArrivalConfirmModal({
             <Pressable onPress={onClose} hitSlop={8} style={styles.closeBtn}>
               <X size={20} color={colors.textMuted} />
             </Pressable>
-          </View>
-
-          {/* Live GPS Location Box */}
-          <View
-            style={[
-              styles.gpsBox,
-              {
-                backgroundColor: isDark ? '#071318' : '#F0FDFA',
-                borderColor: colors.commandBorder,
-              },
-            ]}
-          >
-            <View style={styles.gpsBoxRow}>
-              <Navigation size={15} color={colors.command} />
-              <Text
-                style={[
-                  styles.gpsBoxTitle,
-                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                ارسال لوکیشن لحظه‌ای سرشوفر همراه با تایید
-              </Text>
-            </View>
-
-            {fetchingGps ? (
-              <View style={styles.gpsLoadingRow}>
-                <ActivityIndicator size="small" color={colors.command} />
-                <Text
-                  style={[
-                    styles.gpsCoordsValue,
-                    {
-                      color: colors.textSecondary,
-                      fontFamily: Typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  در حال دریافت دقیق‌ترین مختصات GPS دستگاه...
-                </Text>
-              </View>
-            ) : (
-              <Text
-                selectable
-                style={[
-                  styles.gpsCoordsValue,
-                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                📍 عرض جغرافیایی:{' '}
-                {toPersianDigits((previewCoords?.latitude ?? 35.7219).toFixed(5))} | طول
-                جغرافیایی:{' '}
-                {toPersianDigits((previewCoords?.longitude ?? 51.3347).toFixed(5))}
-              </Text>
-            )}
           </View>
 
           {/* Quick Reason / Note Presets */}
@@ -420,10 +359,11 @@ export function ArrivalConfirmModal({
                 />
               ) : (
                 <>
-                  <Navigation
-                    size={16}
-                    color={isArrived ? '#071318' : '#FFFFFF'}
-                  />
+                  {isArrived ? (
+                    <CheckCircle2 size={16} color="#071318" />
+                  ) : (
+                    <XCircle size={16} color="#FFFFFF" />
+                  )}
                   <Text
                     style={[
                       styles.confirmBtnText,
@@ -434,10 +374,10 @@ export function ArrivalConfirmModal({
                     ]}
                   >
                     {isArrived
-                      ? 'ثبت قطعی رسیدن + ارسال لوکیشن'
+                      ? 'ثبت قطعی تأیید حضور راننده'
                       : openLangiAfter
-                      ? 'ثبت نرسیدن + باز کردن فرم لنگی'
-                      : 'ثبت قطعی نرسیدن + ارسال لوکیشن'}
+                      ? 'ثبت عدم حضور + باز کردن فرم لنگی'
+                      : 'ثبت قطعی عدم حضور راننده'}
                   </Text>
                 </>
               )}

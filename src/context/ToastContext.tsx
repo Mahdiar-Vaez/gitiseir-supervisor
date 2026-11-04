@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   Platform,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Typography, BorderRadius } from '@/constants/theme';
@@ -165,94 +166,109 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
       {toast ? (
-        <View
-          pointerEvents="box-none"
-          style={[
-            styles.wrapper,
-            {
-              top: Math.max(insets.top, 12) + 8,
-            },
-          ]}
+        <Modal
+          key={toast.id}
+          transparent
+          visible={Boolean(toast)}
+          animationType="fade"
+          onRequestClose={hideToast}
+          statusBarTranslucent
         >
-          {(() => {
-            const palette = getToastPalette(toast.type);
-            const IconComp = palette.Icon;
-            return (
-              <View
-                style={[
-                  styles.toastCard,
-                  {
-                    backgroundColor: palette.bg,
-                    borderColor: palette.border,
-                  },
-                ]}
-              >
-                <View style={styles.contentRow}>
-                  <View
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={hideToast}
+          >
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.wrapper,
+                {
+                  top: Math.max(insets.top, 12) + 8,
+                },
+              ]}
+            >
+              {(() => {
+                const palette = getToastPalette(toast.type);
+                const IconComp = palette.Icon;
+                return (
+                  <Pressable
+                    onPress={(e) => e.stopPropagation()}
                     style={[
-                      styles.iconWrap,
-                      { backgroundColor: 'rgba(255,255,255,0.1)' },
+                      styles.toastCard,
+                      {
+                        backgroundColor: palette.bg,
+                        borderColor: palette.border,
+                      },
                     ]}
                   >
-                    <IconComp size={20} color={palette.accent} />
-                  </View>
-
-                  <View style={styles.textCol}>
-                    <View style={styles.titleRow}>
-                      <Text
+                    <View style={styles.contentRow}>
+                      <View
                         style={[
-                          styles.titleText,
-                          { fontFamily: Typography.fontFamily.bold },
+                          styles.iconWrap,
+                          { backgroundColor: 'rgba(255,255,255,0.1)' },
                         ]}
                       >
-                        {toast.title}
-                      </Text>
-                      {toast.statusCode ? (
-                        <View
-                          style={[
-                            styles.codeBadge,
-                            { borderColor: palette.accent },
-                          ]}
-                        >
+                        <IconComp size={20} color={palette.accent} />
+                      </View>
+
+                      <View style={styles.textCol}>
+                        <View style={styles.titleRow}>
                           <Text
                             style={[
-                              styles.codeBadgeText,
-                              {
-                                color: palette.accent,
-                                fontFamily: Typography.fontFamily.bold,
-                              },
+                              styles.titleText,
+                              { fontFamily: Typography.fontFamily.bold },
                             ]}
                           >
-                            کد {toPersianDigits(toast.statusCode)}
+                            {toast.title}
                           </Text>
+                          {toast.statusCode ? (
+                            <View
+                              style={[
+                                styles.codeBadge,
+                                { borderColor: palette.accent },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.codeBadgeText,
+                                  {
+                                    color: palette.accent,
+                                    fontFamily: Typography.fontFamily.bold,
+                                  },
+                                ]}
+                              >
+                                کد {toPersianDigits(toast.statusCode)}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
-                      ) : null}
-                    </View>
 
-                    {toast.message ? (
-                      <Text
-                        style={[
-                          styles.messageText,
-                          { fontFamily: Typography.fontFamily.regular },
-                        ]}
+                        {toast.message ? (
+                          <Text
+                            style={[
+                              styles.messageText,
+                              { fontFamily: Typography.fontFamily.regular },
+                            ]}
+                          >
+                            {toPersianDigits(toast.message)}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      <Pressable
+                        onPress={hideToast}
+                        hitSlop={10}
+                        style={styles.closeBtn}
                       >
-                        علت / پیام: {toPersianDigits(toast.message)}
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  <Pressable
-                    onPress={hideToast}
-                    hitSlop={10}
-                    style={styles.closeBtn}
-                  >
-                    <X size={17} color="#E2E8F0" />
+                        <X size={17} color="#E2E8F0" />
+                      </Pressable>
+                    </View>
                   </Pressable>
-                </View>
-              </View>
-            );
-          })()}
-        </View>
+                );
+              })()}
+            </View>
+          </Pressable>
+        </Modal>
       ) : null}
     </ToastContext.Provider>
   );
@@ -272,12 +288,17 @@ export function useToast(): ToastContextValue {
 }
 
 const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    zIndex: 999999,
+  },
   wrapper: {
     position: 'absolute',
     left: 12,
     right: 12,
-    zIndex: 99999,
-    elevation: 99999,
+    zIndex: 999999,
+    elevation: 999999,
     alignItems: 'center',
     ...(Platform.OS === 'web' ? ({ position: 'fixed' } as any) : {}),
   },

@@ -19,14 +19,19 @@ import {
   AlertTriangle,
   CreditCard,
   Bus,
+  UserX,
 } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useSarshoofer } from '@/context/SarshooferContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { TodayDriverItem, CreateLangiPayload } from '@/services/api/types';
-import { normalizeDigits } from '@/utils/security';
 import {
   toPersianDigits,
+  sanitizeDigitsInput,
+  formatPhoneForApi,
+  formatNationalCodeForApi,
+  formatBankNumberForApi,
+  formatPriceForApi,
   formatNumberWithCommas,
   format4DigitGroups,
 } from '@/utils/persian-digits';
@@ -44,6 +49,37 @@ const REASON_PRESETS = [
   'تاخیر بیش از حد مجاز و اعزام جایگزین',
 ];
 
+function extractEditableLangiName(target: TodayDriverItem | null): {
+  firstName: string;
+  lastName: string;
+} {
+  if (!target?.hasLangi || !target.langi) {
+    return { firstName: '', lastName: '' };
+  }
+  const rawName = (target.langi.name || '').trim();
+  const rawFamily = (target.langi.family || '').trim();
+  const plannedFull = (
+    target.plannedDriverFullName ||
+    target.driverFullName ||
+    ''
+  ).trim();
+  const combined = `${rawName} ${rawFamily}`.trim();
+
+  if (
+    !rawName ||
+    rawName === 'راننده موقت' ||
+    rawName === 'راننده موقت (لنگی)' ||
+    combined === 'راننده موقت' ||
+    combined === 'راننده موقت (لنگی)' ||
+    (plannedFull && combined === plannedFull) ||
+    (plannedFull && rawName === plannedFull)
+  ) {
+    return { firstName: '', lastName: '' };
+  }
+
+  return { firstName: rawName, lastName: rawFamily };
+}
+
 export function LangiRequestModal({
   visible,
   preselectedDriver,
@@ -52,16 +88,46 @@ export function LangiRequestModal({
   const { colors, isDark } = useAppTheme();
   const { drivers, savedShabas, savedCards, submitLangiRequest } = useSarshoofer();
 
-  const [selectedTripCalendarId, setSelectedTripCalendarId] = useState<string>('');
-  const [name, setName] = useState<string>('');
-  const [family, setFamily] = useState<string>('');
-  const [nationalCode, setNationalCode] = useState<string>('');
-  const [phoneNumber, setPhoneNumber] = useState<string>('');
-  const [priceStr, setPriceStr] = useState<string>('');
-  const [paymentType, setPaymentType] = useState<'shaba' | 'card'>('shaba');
-  const [shabaNumber, setShabaNumber] = useState<string>('');
-  const [cardNumber, setCardNumber] = useState<string>('');
-  const [reason, setReason] = useState<string>('');
+  const initialTarget = preselectedDriver || drivers[0] || null;
+  const initialLangi =
+    initialTarget?.hasLangi && initialTarget?.langi ? initialTarget.langi : null;
+  const initialNames = extractEditableLangiName(initialTarget);
+
+  const [selectedTripCalendarId, setSelectedTripCalendarId] = useState<string>(
+    initialTarget?.tripWorkCalendarId || ''
+  );
+  const [name, setName] = useState<string>(initialNames.firstName);
+  const [family, setFamily] = useState<string>(initialNames.lastName);
+  const [nationalCode, setNationalCode] = useState<string>(
+    sanitizeDigitsInput(initialLangi?.nationalCode || '', 10)
+  );
+  const [phoneNumber, setPhoneNumber] = useState<string>(
+    sanitizeDigitsInput(initialLangi?.phoneNumber || '', 11)
+  );
+  const [priceStr, setPriceStr] = useState<string>(
+    sanitizeDigitsInput(
+      initialLangi?.price ?? initialTarget?.price ?? 1500000,
+      12
+    ) || '1500000'
+  );
+  const [paymentType, setPaymentType] = useState<'card' | 'shaba'>(
+    initialLangi?.paymentType || 'card'
+  );
+  const [cardNumber, setCardNumber] = useState<string>(
+    sanitizeDigitsInput(
+      initialLangi?.cardNumber || savedCards[0]?.value || '',
+      16
+    )
+  );
+  const [shabaNumber, setShabaNumber] = useState<string>(
+    sanitizeDigitsInput(
+      initialLangi?.cardAccountNumber || savedShabas[0]?.value || '',
+      24
+    )
+  );
+  const [reason, setReason] = useState<string>(
+    initialLangi?.reason || REASON_PRESETS[0]
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
@@ -71,52 +137,30 @@ export function LangiRequestModal({
     drivers[0] ||
     null;
 
-  const initFormFields = () => {
-    setErrorMsg(null);
-
-    const target = preselectedDriver || drivers[0] || null;
-    if (!target) return;
-
-    setSelectedTripCalendarId(target.tripWorkCalendarId);
-
-    if (target.hasLangi && target.langi) {
-      // Edit existing Langi mode
-      const l = target.langi;
-      setName(l.name);
-      setFamily(l.family);
-      setNationalCode(l.nationalCode);
-      setPhoneNumber(l.phoneNumber);
-      setPriceStr(String(l.price));
-      setPaymentType(l.paymentType);
-      setShabaNumber(l.cardAccountNumber || '');
-      setCardNumber(l.cardNumber || '');
-      setReason(l.reason || REASON_PRESETS[0]);
-    } else {
-      // New Langi request mode
-      setName('');
-      setFamily('');
-      setNationalCode('');
-      setPhoneNumber('');
-      setPriceStr(String(target.price || 1500000));
-      setPaymentType('shaba');
-      setShabaNumber(savedShabas[0]?.value || '');
-      setCardNumber(savedCards[0]?.value || '');
-      setReason(REASON_PRESETS[0]);
-    }
-  };
-
   const handleSelectTrip = (item: TodayDriverItem) => {
     setSelectedTripCalendarId(item.tripWorkCalendarId);
-    setPriceStr(String(item.price || 1500000));
+    if (item.price && item.price > 0) {
+      setPriceStr(sanitizeDigitsInput(item.price, 12));
+    }
     if (item.hasLangi && item.langi) {
-      setName(item.langi.name);
-      setFamily(item.langi.family);
-      setNationalCode(item.langi.nationalCode);
-      setPhoneNumber(item.langi.phoneNumber);
-      setPaymentType(item.langi.paymentType);
-      setShabaNumber(item.langi.cardAccountNumber || '');
-      setCardNumber(item.langi.cardNumber || '');
-      setReason(item.langi.reason);
+      const editableNames = extractEditableLangiName(item);
+      if (editableNames.firstName) setName(editableNames.firstName);
+      if (editableNames.lastName) setFamily(editableNames.lastName);
+      if (item.langi.nationalCode) {
+        setNationalCode(sanitizeDigitsInput(item.langi.nationalCode, 10));
+      }
+      if (item.langi.phoneNumber) {
+        setPhoneNumber(sanitizeDigitsInput(item.langi.phoneNumber, 11));
+      }
+      if (item.langi.cardNumber) {
+        setCardNumber(sanitizeDigitsInput(item.langi.cardNumber, 16));
+      }
+      if (item.langi.cardAccountNumber) {
+        setShabaNumber(sanitizeDigitsInput(item.langi.cardAccountNumber, 24));
+      }
+      if (item.langi.reason) {
+        setReason(item.langi.reason);
+      }
     }
   };
 
@@ -124,43 +168,74 @@ export function LangiRequestModal({
     if (!activeDriverItem || submitting) return;
     setErrorMsg(null);
 
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    const trimmedFamily = family.trim();
+
+    if (!trimmedName) {
       setErrorMsg('لطفاً نام راننده لنگی (جایگزین) را وارد کنید.');
       return;
     }
-    if (!family.trim()) {
+    if (!trimmedFamily) {
       setErrorMsg('لطفاً نام خانوادگی راننده لنگی را وارد کنید.');
       return;
     }
 
-    const cleanNatCode = normalizeDigits(nationalCode).replace(/\D/g, '');
+    const cleanNatCode = formatNationalCodeForApi(nationalCode);
     if (cleanNatCode.length !== 10) {
-      setErrorMsg('کد ملی راننده لنگی الزامی است و باید ۱۰ رقم باشد.');
+      setErrorMsg('کد ملی راننده لنگی باید دقیقاً ۱۰ رقم باشد.');
       return;
     }
 
-    const cleanPhone = normalizeDigits(phoneNumber).replace(/\D/g, '');
+    const cleanPhone = formatPhoneForApi(phoneNumber);
     if (cleanPhone.length < 10) {
-      setErrorMsg('شماره موبایل راننده لنگی معتبر نیست.');
+      setErrorMsg('شماره موبایل راننده لنگی معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸۹).');
       return;
     }
 
-    const cleanPrice = Number(normalizeDigits(priceStr).replace(/\D/g, ''));
+    const cleanPrice = formatPriceForApi(priceStr);
     if (!cleanPrice || cleanPrice <= 0) {
-      setErrorMsg('مبلغ توافقی سرویس الزامی است.');
+      setErrorMsg('لطفاً مبلغ توافقی سرویس را به صورت عدد وارد کنید.');
       return;
     }
 
-    const cleanShaba = normalizeDigits(shabaNumber).replace(/\D/g, '');
-    const cleanCard = normalizeDigits(cardNumber).replace(/\D/g, '');
+    const rawCardDigits = formatBankNumberForApi(cardNumber, 24);
+    const rawShabaDigits = formatBankNumberForApi(shabaNumber, 24);
 
-    if (paymentType === 'shaba' && cleanShaba.length !== 24) {
-      setErrorMsg('شماره شبا باید ۲۴ رقم (بدون IR) باشد.');
-      return;
-    }
-    if (paymentType === 'card' && cleanCard.length !== 16) {
-      setErrorMsg('شماره کارت بانکی باید ۱۶ رقم باشد.');
-      return;
+    let finalCardNumber = '';
+    let finalAccountNumber = '';
+    let resolvedPaymentType: 'card' | 'shaba' = paymentType;
+
+    if (paymentType === 'card') {
+      if (rawCardDigits.length === 16) {
+        finalCardNumber = rawCardDigits;
+        finalAccountNumber = rawShabaDigits.length === 24 ? rawShabaDigits : rawCardDigits;
+      } else if (rawShabaDigits.length === 24) {
+        resolvedPaymentType = 'shaba';
+        finalAccountNumber = rawShabaDigits;
+        finalCardNumber = rawShabaDigits.slice(0, 16);
+      } else {
+        setErrorMsg('لطفاً شماره کارت ۱۶ رقمی راننده لنگی را به صورت کامل وارد کنید.');
+        return;
+      }
+    } else {
+      if (rawShabaDigits.length === 24) {
+        finalAccountNumber = rawShabaDigits;
+        finalCardNumber =
+          rawCardDigits.length === 16 ? rawCardDigits : rawShabaDigits.slice(0, 16);
+      } else if (rawShabaDigits.length === 16) {
+        resolvedPaymentType = 'card';
+        finalCardNumber = rawShabaDigits;
+        finalAccountNumber = rawShabaDigits;
+      } else if (rawCardDigits.length === 16) {
+        resolvedPaymentType = 'card';
+        finalCardNumber = rawCardDigits;
+        finalAccountNumber = rawCardDigits;
+      } else {
+        setErrorMsg(
+          'لطفاً شماره شبا (۲۴ رقم بدون IR) یا در تب شماره کارت، شماره کارت ۱۶ رقمی را وارد کنید.'
+        );
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -171,16 +246,18 @@ export function LangiRequestModal({
         tripName: activeDriverItem.tripName,
         serviceLocationTitle: activeDriverItem.serviceLocationTitle,
         scheduledTime: `${activeDriverItem.scheduledStartTime} - ${activeDriverItem.scheduledEndTime}`,
-        originalDriverName: activeDriverItem.driverFullName,
-        originalDriverPhone: activeDriverItem.driverPhone,
-        name: name.trim(),
-        family: family.trim(),
+        originalDriverName:
+          activeDriverItem.plannedDriverFullName || activeDriverItem.driverFullName,
+        originalDriverPhone:
+          activeDriverItem.plannedDriverMobile || activeDriverItem.driverPhone,
+        name: trimmedName,
+        family: trimmedFamily,
         nationalCode: cleanNatCode,
         phoneNumber: cleanPhone,
         price: cleanPrice,
-        paymentType,
-        cardAccountNumber: cleanShaba,
-        cardNumber: cleanCard,
+        paymentType: resolvedPaymentType,
+        cardAccountNumber: finalAccountNumber,
+        cardNumber: finalCardNumber,
         reason: reason.trim() || REASON_PRESETS[0],
       };
 
@@ -188,18 +265,22 @@ export function LangiRequestModal({
       await triggerNotificationHaptic('success');
       onClose();
     } catch (e: any) {
-      setErrorMsg(e?.message || 'خطا در ثبت درخواست لنگی');
+      setErrorMsg(e?.message || 'خطا در ثبت درخواست راننده لنگی در سرور');
     } finally {
       setSubmitting(false);
     }
   };
+
+  const absentMainDriverName =
+    activeDriverItem?.plannedDriverFullName ||
+    activeDriverItem?.driverFullName ||
+    'نامشخص';
 
   return (
     <Modal
       visible={visible}
       transparent
       animationType="slide"
-      onShow={initFormFields}
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
@@ -246,7 +327,7 @@ export function LangiRequestModal({
                     },
                   ]}
                 >
-                  تکمیل مشخصات راننده جایگزین جهت تایید ناوگان و واریز مالی
+                  مشخصات راننده جایگزین را وارد کنید تا در سرویس امروز ثبت شود
                 </Text>
               </View>
             </View>
@@ -284,75 +365,136 @@ export function LangiRequestModal({
               </View>
             )}
 
-            {/* 1. Trip / Service Selector (if not locked to a single preselected driver or if switching) */}
-            <View style={styles.fieldGroup}>
-              <Text
+            {/* 1. Target Service & Absent Main Driver Summary Banner */}
+            {activeDriverItem && (
+              <View
                 style={[
-                  styles.fieldLabel,
-                  { color: colors.textSecondary, fontFamily: Typography.fontFamily.bold },
+                  styles.selectedServiceBanner,
+                  {
+                    backgroundColor: isDark ? '#071318' : '#F8FAFC',
+                    borderColor: colors.border,
+                  },
                 ]}
               >
-                ۱. انتخاب سرویس و راننده اصلی امروز:
-              </Text>
-
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.tripSelectorRow}
-              >
-                {drivers.map((d) => {
-                  const isSelected = d.tripWorkCalendarId === activeDriverItem?.tripWorkCalendarId;
-                  return (
-                    <Pressable
-                      key={d.tripWorkCalendarId}
-                      onPress={() => handleSelectTrip(d)}
-                      style={[
-                        styles.tripChip,
-                        {
-                          backgroundColor: isSelected
-                            ? colors.langiBg
-                            : isDark
-                            ? '#071318'
-                            : '#F8FAFC',
-                          borderColor: isSelected ? colors.langi : colors.border,
-                        },
-                      ]}
+                <View style={styles.selectedServiceRow}>
+                  <Bus size={15} color={colors.gold} />
+                  <Text
+                    style={[
+                      styles.selectedServiceTitle,
+                      { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                    ]}
+                  >
+                    سرویس: {activeDriverItem.tripName} (ساعت{' '}
+                    {toPersianDigits(activeDriverItem.scheduledStartTime)})
+                  </Text>
+                </View>
+                <View style={styles.selectedServiceRow}>
+                  <UserX size={14} color={colors.danger} />
+                  <Text
+                    style={[
+                      styles.absentDriverText,
+                      {
+                        color: colors.textSecondary,
+                        fontFamily: Typography.fontFamily.medium,
+                      },
+                    ]}
+                  >
+                    جایگزین برای راننده اصلی غایب:{' '}
+                    <Text
+                      style={{
+                        color: colors.danger,
+                        fontFamily: Typography.fontFamily.bold,
+                      }}
                     >
-                      <Bus
-                        size={13}
-                        color={isSelected ? colors.langi : colors.textMuted}
-                      />
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            styles.tripChipDriver,
-                            {
-                              color: isSelected ? colors.langi : colors.text,
-                              fontFamily: Typography.fontFamily.bold,
-                            },
-                          ]}
-                        >
-                          {d.driverFullName} ({toPersianDigits(d.scheduledStartTime)})
-                        </Text>
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            styles.tripChipRoute,
-                            {
-                              color: colors.textSecondary,
-                              fontFamily: Typography.fontFamily.regular,
-                            },
-                          ]}
-                        >
-                          {d.tripName}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
+                      {absentMainDriverName}
+                    </Text>
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Trip switcher only if opened without a specific card preselected */}
+            {!preselectedDriver && drivers.length > 1 && (
+              <View style={styles.fieldGroup}>
+                <Text
+                  style={[
+                    styles.fieldLabel,
+                    { color: colors.textSecondary, fontFamily: Typography.fontFamily.bold },
+                  ]}
+                >
+                  تغییر سرویس مورد نظر:
+                </Text>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.tripSelectorRow}
+                >
+                  {drivers.map((d) => {
+                    const isSelected =
+                      d.tripWorkCalendarId === activeDriverItem?.tripWorkCalendarId;
+                    return (
+                      <Pressable
+                        key={d.tripWorkCalendarId}
+                        onPress={() => handleSelectTrip(d)}
+                        style={[
+                          styles.tripChip,
+                          {
+                            backgroundColor: isSelected
+                              ? colors.commandBg
+                              : isDark
+                              ? '#071318'
+                              : '#F8FAFC',
+                            borderColor: isSelected ? colors.command : colors.border,
+                          },
+                        ]}
+                      >
+                        <Bus
+                          size={13}
+                          color={isSelected ? colors.command : colors.textMuted}
+                        />
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.tripChipDriver,
+                              {
+                                color: isSelected ? colors.command : colors.text,
+                                fontFamily: Typography.fontFamily.bold,
+                              },
+                            ]}
+                          >
+                            {d.tripName} ({toPersianDigits(d.scheduledStartTime)})
+                          </Text>
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.tripChipRoute,
+                              {
+                                color: colors.textSecondary,
+                                fontFamily: Typography.fontFamily.regular,
+                              },
+                            ]}
+                          >
+                            راننده خط: {d.plannedDriverFullName || d.driverFullName}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Section Title for New Substitute Driver */}
+            <Text
+              style={[
+                styles.sectionDividerTitle,
+                { color: colors.langi, fontFamily: Typography.fontFamily.bold },
+              ]}
+            >
+              مشخصات راننده لنگی (جایگزین جدید):
+            </Text>
 
             {/* 2. Substitute Driver Name & Family */}
             <View style={styles.twoColRow}>
@@ -368,8 +510,9 @@ export function LangiRequestModal({
                 <TextInput
                   value={name}
                   onChangeText={setName}
-                  placeholder="مثال: محمد"
+                  placeholder="مثال: رضا"
                   placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
                   style={[
                     styles.input,
                     {
@@ -389,13 +532,14 @@ export function LangiRequestModal({
                     { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
                   ]}
                 >
-                  نام خانوادگی *
+                  نام خانوادگی لنگی *
                 </Text>
                 <TextInput
                   value={family}
                   onChangeText={setFamily}
-                  placeholder="مثال: صادقی"
+                  placeholder="مثال: محمدی"
                   placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
                   style={[
                     styles.input,
                     {
@@ -412,62 +556,90 @@ export function LangiRequestModal({
             {/* 3. National Code & Phone Number */}
             <View style={styles.twoColRow}>
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text
-                  style={[
-                    styles.fieldLabel,
-                    { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
-                  ]}
-                >
-                  کد ملی (۱۰ رقم) *
-                </Text>
+                <View style={styles.labelWithHelper}>
+                  <Text
+                    style={[
+                      styles.fieldLabel,
+                      { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+                    ]}
+                  >
+                    کد ملی (۱۰ رقم) *
+                  </Text>
+                  <Text
+                    style={[
+                      styles.digitCountHelper,
+                      {
+                        color:
+                          nationalCode.length === 10
+                            ? colors.success
+                            : colors.textMuted,
+                        fontFamily: Typography.fontFamily.regular,
+                      },
+                    ]}
+                  >
+                    {toPersianDigits(nationalCode.length)}/۱۰
+                  </Text>
+                </View>
                 <TextInput
-                  value={toPersianDigits(nationalCode)}
-                  onChangeText={(val) =>
-                    setNationalCode(normalizeDigits(val).replace(/\D/g, '').slice(0, 10))
-                  }
-                  keyboardType="number-pad"
+                  value={nationalCode}
+                  onChangeText={(val) => setNationalCode(sanitizeDigitsInput(val, 10))}
+                  keyboardType="numeric"
                   maxLength={10}
-                  placeholder="۰۰۷۴۵۶۷۸۹۱"
+                  placeholder="0012345678"
                   placeholderTextColor={colors.textMuted}
                   style={[
                     styles.input,
                     {
                       backgroundColor: isDark ? '#071318' : '#F8FAFC',
-                      borderColor: colors.border,
+                      borderColor:
+                        nationalCode.length === 10 ? colors.success : colors.border,
                       color: colors.text,
                       fontFamily: Typography.fontFamily.bold,
-                      textAlign: 'left',
                     },
                   ]}
                 />
               </View>
 
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text
-                  style={[
-                    styles.fieldLabel,
-                    { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
-                  ]}
-                >
-                  شماره همراه *
-                </Text>
+                <View style={styles.labelWithHelper}>
+                  <Text
+                    style={[
+                      styles.fieldLabel,
+                      { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+                    ]}
+                  >
+                    شماره همراه *
+                  </Text>
+                  <Text
+                    style={[
+                      styles.digitCountHelper,
+                      {
+                        color:
+                          phoneNumber.length >= 10
+                            ? colors.success
+                            : colors.textMuted,
+                        fontFamily: Typography.fontFamily.regular,
+                      },
+                    ]}
+                  >
+                    {toPersianDigits(phoneNumber.length)}/۱۱
+                  </Text>
+                </View>
                 <TextInput
-                  value={toPersianDigits(phoneNumber)}
-                  onChangeText={(val) =>
-                    setPhoneNumber(normalizeDigits(val).replace(/\D/g, '').slice(0, 11))
-                  }
+                  value={phoneNumber}
+                  onChangeText={(val) => setPhoneNumber(sanitizeDigitsInput(val, 11))}
                   keyboardType="phone-pad"
                   maxLength={11}
-                  placeholder="۰۹۱۲۳۴۵۶۷۸۹"
+                  placeholder="09123456789"
                   placeholderTextColor={colors.textMuted}
                   style={[
                     styles.input,
                     {
                       backgroundColor: isDark ? '#071318' : '#F8FAFC',
-                      borderColor: colors.border,
+                      borderColor:
+                        phoneNumber.length >= 10 ? colors.success : colors.border,
                       color: colors.text,
                       fontFamily: Typography.fontFamily.bold,
-                      textAlign: 'left',
                     },
                   ]}
                 />
@@ -496,12 +668,11 @@ export function LangiRequestModal({
               </View>
 
               <TextInput
-                value={formatNumberWithCommas(priceStr)}
-                onChangeText={(val) =>
-                  setPriceStr(normalizeDigits(val).replace(/\D/g, '').slice(0, 10))
-                }
-                keyboardType="number-pad"
-                placeholder="۱,۵۰۰,۰۰۰"
+                value={priceStr}
+                onChangeText={(val) => setPriceStr(sanitizeDigitsInput(val, 12))}
+                keyboardType="numeric"
+                maxLength={12}
+                placeholder="1500000"
                 placeholderTextColor={colors.textMuted}
                 style={[
                   styles.input,
@@ -510,13 +681,12 @@ export function LangiRequestModal({
                     borderColor: colors.borderGold,
                     color: colors.gold,
                     fontFamily: Typography.fontFamily.bold,
-                    textAlign: 'left',
                   },
                 ]}
               />
             </View>
 
-            {/* 5. Bank Payment Method: SHABA (24 digits) vs Card (16 digits) */}
+            {/* 5. Bank Payment Method: Card (16 digits - Default) vs SHABA (24 digits) */}
             <View
               style={[
                 styles.bankSectionBox,
@@ -527,36 +697,6 @@ export function LangiRequestModal({
               ]}
             >
               <View style={styles.bankTabsRow}>
-                <Pressable
-                  onPress={() => setPaymentType('shaba')}
-                  style={[
-                    styles.bankTabBtn,
-                    {
-                      backgroundColor:
-                        paymentType === 'shaba' ? colors.commandBg : 'transparent',
-                      borderColor:
-                        paymentType === 'shaba' ? colors.command : colors.border,
-                    },
-                  ]}
-                >
-                  <CreditCard
-                    size={14}
-                    color={paymentType === 'shaba' ? colors.command : colors.textMuted}
-                  />
-                  <Text
-                    style={[
-                      styles.bankTabText,
-                      {
-                        color:
-                          paymentType === 'shaba' ? colors.command : colors.textSecondary,
-                        fontFamily: Typography.fontFamily.bold,
-                      },
-                    ]}
-                  >
-                    شماره شبا (۲۴ رقم)
-                  </Text>
-                </Pressable>
-
                 <Pressable
                   onPress={() => setPaymentType('card')}
                   style={[
@@ -586,16 +726,136 @@ export function LangiRequestModal({
                     شماره کارت (۱۶ رقم)
                   </Text>
                 </Pressable>
+
+                <Pressable
+                  onPress={() => setPaymentType('shaba')}
+                  style={[
+                    styles.bankTabBtn,
+                    {
+                      backgroundColor:
+                        paymentType === 'shaba' ? colors.commandBg : 'transparent',
+                      borderColor:
+                        paymentType === 'shaba' ? colors.command : colors.border,
+                    },
+                  ]}
+                >
+                  <CreditCard
+                    size={14}
+                    color={paymentType === 'shaba' ? colors.command : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.bankTabText,
+                      {
+                        color:
+                          paymentType === 'shaba' ? colors.command : colors.textSecondary,
+                        fontFamily: Typography.fontFamily.bold,
+                      },
+                    ]}
+                  >
+                    شماره شبا (۲۴ رقم)
+                  </Text>
+                </Pressable>
               </View>
 
-              {paymentType === 'shaba' ? (
-                <View style={{ gap: 8 }}>
+              {paymentType === 'card' ? (
+                <View style={{ gap: 6 }}>
+                  {savedCards.length > 0 && (
+                    <View style={styles.savedBankChips}>
+                      {savedCards.map((c) => (
+                        <Pressable
+                          key={c.value}
+                          onPress={() => setCardNumber(sanitizeDigitsInput(c.value, 16))}
+                          style={[
+                            styles.savedBankChip,
+                            {
+                              backgroundColor:
+                                cardNumber === c.value ? colors.commandBg : colors.card,
+                              borderColor:
+                                cardNumber === c.value ? colors.command : colors.border,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.savedBankChipText,
+                              {
+                                color:
+                                  cardNumber === c.value
+                                    ? colors.command
+                                    : colors.textSecondary,
+                                fontFamily: Typography.fontFamily.medium,
+                              },
+                            ]}
+                          >
+                            {c.ownerName}: {toPersianDigits(c.value.slice(0, 4))}...
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+
+                  <View style={styles.labelWithHelper}>
+                    <Text
+                      style={[
+                        styles.digitCountHelper,
+                        { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
+                      ]}
+                    >
+                      شماره کارت ۱۶ رقمی (بدون خط تیره):
+                    </Text>
+                    <Text
+                      style={[
+                        styles.digitCountHelper,
+                        {
+                          color:
+                            cardNumber.length === 16 ? colors.success : colors.textMuted,
+                          fontFamily: Typography.fontFamily.bold,
+                        },
+                      ]}
+                    >
+                      {toPersianDigits(cardNumber.length)} / ۱۶ رقم
+                    </Text>
+                  </View>
+
+                  <TextInput
+                    value={cardNumber}
+                    onChangeText={(val) => setCardNumber(sanitizeDigitsInput(val, 16))}
+                    keyboardType="numeric"
+                    maxLength={16}
+                    placeholder="مثال: 6037991122334455"
+                    placeholderTextColor={colors.textMuted}
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor:
+                          cardNumber.length === 16 ? colors.success : colors.border,
+                        color: colors.text,
+                        fontFamily: Typography.fontFamily.bold,
+                      },
+                    ]}
+                  />
+
+                  {cardNumber.length > 0 && (
+                    <Text
+                      style={[
+                        styles.formattedBankPreview,
+                        { color: colors.command, fontFamily: Typography.fontFamily.medium },
+                      ]}
+                    >
+                      نمایش چهاررقمی: {format4DigitGroups(cardNumber)}
+                    </Text>
+                  )}
+                </View>
+              ) : (
+                <View style={{ gap: 6 }}>
                   {savedShabas.length > 0 && (
                     <View style={styles.savedBankChips}>
                       {savedShabas.map((s) => (
                         <Pressable
                           key={s.value}
-                          onPress={() => setShabaNumber(s.value)}
+                          onPress={() => setShabaNumber(sanitizeDigitsInput(s.value, 24))}
                           style={[
                             styles.savedBankChip,
                             {
@@ -627,82 +887,58 @@ export function LangiRequestModal({
                     </View>
                   )}
 
-                  <TextInput
-                    value={format4DigitGroups(shabaNumber)}
-                    onChangeText={(val) =>
-                      setShabaNumber(normalizeDigits(val).replace(/\D/g, '').slice(0, 24))
-                    }
-                    keyboardType="number-pad"
-                    placeholder="۱۲۰۱ ۷۰۰۰ ۰۰۰۰ ۰۱۲۳ ۴۵۶۷ ۸۹۰۱"
-                    placeholderTextColor={colors.textMuted}
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                        color: colors.text,
-                        fontFamily: Typography.fontFamily.bold,
-                        textAlign: 'left',
-                      },
-                    ]}
-                  />
-                </View>
-              ) : (
-                <View style={{ gap: 8 }}>
-                  {savedCards.length > 0 && (
-                    <View style={styles.savedBankChips}>
-                      {savedCards.map((c) => (
-                        <Pressable
-                          key={c.value}
-                          onPress={() => setCardNumber(c.value)}
-                          style={[
-                            styles.savedBankChip,
-                            {
-                              backgroundColor:
-                                cardNumber === c.value ? colors.commandBg : colors.card,
-                              borderColor:
-                                cardNumber === c.value ? colors.command : colors.border,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.savedBankChipText,
-                              {
-                                color:
-                                  cardNumber === c.value
-                                    ? colors.command
-                                    : colors.textSecondary,
-                                fontFamily: Typography.fontFamily.medium,
-                              },
-                            ]}
-                          >
-                            {c.ownerName}: {toPersianDigits(c.value.slice(0, 4))}...
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
+                  <View style={styles.labelWithHelper}>
+                    <Text
+                      style={[
+                        styles.digitCountHelper,
+                        { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
+                      ]}
+                    >
+                      شماره شبا ۲۴ رقمی (بدون IR):
+                    </Text>
+                    <Text
+                      style={[
+                        styles.digitCountHelper,
+                        {
+                          color:
+                            shabaNumber.length === 24 ? colors.success : colors.textMuted,
+                          fontFamily: Typography.fontFamily.bold,
+                        },
+                      ]}
+                    >
+                      {toPersianDigits(shabaNumber.length)} / ۲۴ رقم
+                    </Text>
+                  </View>
 
                   <TextInput
-                    value={format4DigitGroups(cardNumber)}
-                    onChangeText={(val) =>
-                      setCardNumber(normalizeDigits(val).replace(/\D/g, '').slice(0, 16))
-                    }
-                    keyboardType="number-pad"
-                    placeholder="۶۰۳۷ ۹۹۷۱ ۲۳۴۵ ۸۸۹۹"
+                    value={shabaNumber}
+                    onChangeText={(val) => setShabaNumber(sanitizeDigitsInput(val, 24))}
+                    keyboardType="numeric"
+                    maxLength={24}
+                    placeholder="مثال: 120170000000012345678901"
                     placeholderTextColor={colors.textMuted}
                     style={[
                       styles.input,
                       {
                         backgroundColor: colors.card,
-                        borderColor: colors.border,
+                        borderColor:
+                          shabaNumber.length === 24 ? colors.success : colors.border,
                         color: colors.text,
                         fontFamily: Typography.fontFamily.bold,
-                        textAlign: 'left',
                       },
                     ]}
                   />
+
+                  {shabaNumber.length > 0 && (
+                    <Text
+                      style={[
+                        styles.formattedBankPreview,
+                        { color: colors.command, fontFamily: Typography.fontFamily.medium },
+                      ]}
+                    >
+                      IR {format4DigitGroups(shabaNumber)}
+                    </Text>
+                  )}
                 </View>
               )}
             </View>
@@ -876,6 +1112,32 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
   },
+  selectedServiceBanner: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  selectedServiceRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+  },
+  selectedServiceTitle: {
+    fontSize: 13,
+    textAlign: 'right',
+    flex: 1,
+  },
+  absentDriverText: {
+    fontSize: 12,
+    textAlign: 'right',
+    flex: 1,
+  },
+  sectionDividerTitle: {
+    fontSize: 13,
+    textAlign: 'right',
+  },
   fieldGroup: {
     gap: 6,
   },
@@ -888,8 +1150,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  digitCountHelper: {
+    fontSize: 11,
+  },
   priceHelper: {
     fontSize: 12,
+  },
+  formattedBankPreview: {
+    fontSize: 11.5,
+    textAlign: 'left',
+    paddingHorizontal: 4,
   },
   tripSelectorRow: {
     flexDirection: 'row-reverse',

@@ -17,8 +17,6 @@ import { AppHeader } from '@/components/ui/AppHeader';
 import { ShamsiCalendar } from '@/components/ui/ShamsiCalendar';
 import { DayTripsTable } from '@/components/ui/DayTripsTable';
 import { TripSummaryModal } from '@/components/ui/TripSummaryModal';
-import { ConfirmAttendanceModal } from '@/components/ui/ConfirmAttendanceModal';
-import { AssignTempDriverModal } from '@/components/ui/AssignTempDriverModal';
 import { WorkCalendarDay, DayTripGridItem } from '@/services/api/types';
 import { getWorkCalendarApi, getDayTripsGridApi } from '@/services/api/calendar';
 import { Inbox } from 'lucide-react-native';
@@ -45,13 +43,6 @@ export default function CalendarScreen() {
   // 3. Modal state
   const [selectedGridTrip, setSelectedGridTrip] = useState<DayTripGridItem | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
-
-  // Supervisor / Calendar Day Action Modals
-  const [attendanceModalOpen, setAttendanceModalOpen] = useState<boolean>(false);
-  const [attendanceTrip, setAttendanceTrip] = useState<DayTripGridItem | null>(null);
-
-  const [tempDriverModalOpen, setTempDriverModalOpen] = useState<boolean>(false);
-  const [tempDriverTrip, setTempDriverTrip] = useState<DayTripGridItem | null>(null);
 
   // Load monthly calendar days
   useEffect(() => {
@@ -220,15 +211,7 @@ export default function CalendarScreen() {
           <DayTripsTable
             trips={dayTrips}
             onSelectTrip={handleSelectTripFromTable}
-            showSupervisorActions={true}
-            onConfirmAttendance={(trip) => {
-              setAttendanceTrip(trip);
-              setAttendanceModalOpen(true);
-            }}
-            onAssignTempDriver={(trip) => {
-              setTempDriverTrip(trip);
-              setTempDriverModalOpen(true);
-            }}
+            showSupervisorActions={false}
           />
         ) : (
           /* Real Empty State (Zero Mock Data) */
@@ -302,58 +285,6 @@ export default function CalendarScreen() {
         }
         calendarDayId={selectedGridTrip?.tripWorkCalendarId || ''}
         onClose={handleCloseModal}
-      />
-
-      {/* 6. Confirm Attendance Modal */}
-      <ConfirmAttendanceModal
-        visible={attendanceModalOpen}
-        calendarDayId={attendanceTrip?.tripWorkCalendarId ?? null}
-        tripId={attendanceTrip?.tripId}
-        tripName={attendanceTrip?.tripName}
-        driverName={attendanceTrip?.driverFullName}
-        tripTime={
-          attendanceTrip?.outbound?.start
-            ? `${attendanceTrip.outbound.start.slice(0, 5)} تا ${
-                attendanceTrip.outbound.end?.slice(0, 5) || ''
-              }`
-            : undefined
-        }
-        selectedDateLabel={selectedDateLabel}
-        dayTrips={dayTrips}
-        onClose={() => {
-          setAttendanceModalOpen(false);
-          setAttendanceTrip(null);
-        }}
-        onSuccess={() => setRefreshIndex((prev) => prev + 1)}
-        onDriverMarkedAbsent={(absentCalendarDayId) => {
-          const matched =
-            dayTrips.find((t) => t.tripWorkCalendarId === absentCalendarDayId) ||
-            attendanceTrip;
-          setTempDriverTrip(matched);
-          setTempDriverModalOpen(true);
-        }}
-      />
-
-      {/* 7. Assign Temporary Driver Modal */}
-      <AssignTempDriverModal
-        visible={tempDriverModalOpen}
-        calendarDayId={tempDriverTrip?.tripWorkCalendarId ?? null}
-        tripId={tempDriverTrip?.tripId}
-        tripName={tempDriverTrip?.tripName}
-        mainDriverName={tempDriverTrip?.driverFullName}
-        defaultPrice={
-          tempDriverTrip?.outbound?.price ??
-          tempDriverTrip?.inbound?.price ??
-          null
-        }
-        existingTempDriver={tempDriverTrip?.temporaryDriver}
-        selectedDateLabel={selectedDateLabel}
-        dayTrips={dayTrips}
-        onClose={() => {
-          setTempDriverModalOpen(false);
-          setTempDriverTrip(null);
-        }}
-        onSuccess={() => setRefreshIndex((prev) => prev + 1)}
       />
     </View>
   );

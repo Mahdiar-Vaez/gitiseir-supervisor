@@ -15,10 +15,9 @@ import {
   submitLangiRequestApi,
 } from '@/services/api/sarshoofer';
 import {
-  getServiceLocationsApi,
   getTodayExecutionSummaryApi,
 } from '@/services/api/supervisor';
-import { getCurrentCoordinates, Coordinates } from '@/services/location/gps';
+import { Coordinates } from '@/services/location/gps';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 
@@ -30,6 +29,8 @@ export interface SavedBankEntry {
 export interface SarshooferStats {
   totalDrivers: number;
   arrivedCount: number;
+  driverConfirmedCount: number;
+  completedByDriverCount: number;
   notArrivedCount: number;
   pendingCount: number;
   langiCount: number;
@@ -40,9 +41,9 @@ interface SarshooferContextValue {
   dailyBoard: SupervisorDailyBoardResult | null;
   serviceLocations: CompanyServiceLocation[];
   companyServiceLocationId: number;
-  entering: boolean;
+  entering: boolean | undefined;
   setCompanyServiceLocationId: (id: number) => void;
-  setEntering: (val: boolean) => void;
+  setEntering: (val: boolean | undefined) => void;
   langiList: LangiRequestItem[];
   stats: SarshooferStats;
   todayExecutionSummary: TodayExecutionSummaryResult | null;
@@ -62,7 +63,6 @@ interface SarshooferContextValue {
   ) => Promise<{
     success: boolean;
     message: string;
-    coords: Coordinates;
     verifiedAtTime: string;
   }>;
   markDriverAbsent: (
@@ -83,18 +83,24 @@ interface SarshooferContextValue {
 const SarshooferContext = createContext<SarshooferContextValue | null>(null);
 
 export function SarshooferProvider({ children }: { children: React.ReactNode }) {
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, companyServiceId } = useAuth();
   const { showSuccess, showError } = useToast();
 
   const [drivers, setDrivers] = useState<TodayDriverItem[]>([]);
   const [dailyBoard, setDailyBoard] = useState<SupervisorDailyBoardResult | null>(null);
-  const [serviceLocations, setServiceLocations] = useState<CompanyServiceLocation[]>([]);
-  const [companyServiceLocationId, setCompanyServiceLocationId] = useState<number>(18);
-  const [entering, setEntering] = useState<boolean>(true);
+  const [serviceLocations] = useState<CompanyServiceLocation[]>([]);
+  const [customLocationId, setCustomLocationId] = useState<number | null>(null);
+  const [entering, setEntering] = useState<boolean | undefined>(undefined);
+
+  const companyServiceLocationId =
+    customLocationId ?? (companyServiceId && companyServiceId > 0 ? companyServiceId : 14);
+  const setCompanyServiceLocationId = useCallback((id: number) => {
+    setCustomLocationId(id);
+  }, []);
 
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [lastCoordinates, setLastCoordinates] = useState<Coordinates | null>(null);
+  const [lastCoordinates] = useState<Coordinates | null>(null);
 
   const [savedShabas, setSavedShabas] = useState<SavedBankEntry[]>([]);
   const [savedCards, setSavedCards] = useState<SavedBankEntry[]>([]);
@@ -115,20 +121,6 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
     } catch (err: any) {
       console.log('[SarshooferContext] today-execution-summary info:', err?.message);
     }
-  }, [token, isAuthenticated]);
-
-  // Load available service locations from backend when authenticated
-  useEffect(() => {
-    if (!token || !isAuthenticated) return;
-    getServiceLocationsApi(token)
-      .then((locs) => {
-        if (locs.length > 0) {
-          setServiceLocations(locs);
-        }
-      })
-      .catch((err) => {
-        console.log('[SarshooferContext] Service locations lookup info:', err?.message);
-      });
   }, [token, isAuthenticated]);
 
   const loadData = useCallback(async () => {
@@ -192,38 +184,75 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
       delayMinutes?: number
     ) => {
       try {
-        const coords = await getCurrentCoordinates();
-        setLastCoordinates(coords);
-
         const res = await submitDriverArrivalVerificationApi(
           tripWorkCalendarId,
           status,
-          coords,
           note,
           isDelayed,
           delayMinutes,
           token
         );
 
+        const resolvedNote =
+          note ||
+          (status === 'arrived'
+            ? 'تأیید حضور توسط سرشوفر'
+            : 'ثبت عدم حضور راننده توسط سرشوفر');
+        const nowIso = new Date().toISOString();
+
         setDrivers((prev) =>
-          prev.map((d) =>
-            d.tripWorkCalendarId === tripWorkCalendarId
-              ? {
-                  ...d,
-                  arrivalStatus: status,
-                  gpsStamp: {
-                    latitude: coords.latitude,
-                    longitude: coords.longitude,
-                    verifiedAtTime: res.verifiedAtTime,
-                    note:
-                      note ||
-                      (status === 'arrived'
-                        ? 'تأیید حضور توسط سرشوفر در محل ایستگاه'
-                        : 'ثبت عدم حضور راننده توسط سرشوفر'),
-                  },
-                }
-              : d
-          )
+          prev.map((d) => {
+            if (d.tripWorkCalendarId !== tripWorkCalendarId) return d;
+
+            if (status === 'not_arrived') {
+              return {
+                ...d,
+                arrivalStatus: 'not_arrived',
+                isConfirmedBySupervisor: true,
+                supervisorNote: resolvedNote,
+                executionStatus: 4,
+                executionStatusTitle: 'عدم حضور راننده (غیبت)',
+                gpsStamp: {
+                  latitude: 0,
+                  longitude: 0,
+                  verifiedAtTime: res.verifiedAtTime,
+                  note: resolvedNote,
+                },
+              };
+            }
+
+            // Entering = true => Completed (3) and endedAtUtc
+            // Entering = false => Started (1) and startedAtUtc (unless already started/completed)
+            const nextExecStatus =
+              d.entering === true
+                ? 3
+                : d.executionStatus === 3
+                ? 3
+                : 1;
+            const nextExecTitle =
+              nextExecStatus === 3
+                ? 'پایان‌یافته توسط راننده'
+                : 'در حال اجرا توسط راننده';
+
+            return {
+              ...d,
+              arrivalStatus: 'arrived',
+              isConfirmedBySupervisor: true,
+              supervisorNote: resolvedNote,
+              executionStatus: nextExecStatus,
+              executionStatusTitle: nextExecTitle,
+              startedAtUtc:
+                d.entering === false && !d.startedAtUtc ? nowIso : d.startedAtUtc,
+              endedAtUtc:
+                d.entering === true && !d.endedAtUtc ? nowIso : d.endedAtUtc,
+              gpsStamp: {
+                latitude: 0,
+                longitude: 0,
+                verifiedAtTime: res.verifiedAtTime,
+                note: resolvedNote,
+              },
+            };
+          })
         );
 
         showSuccess(res.message, 'ثبت وضعیت حضور');
@@ -232,7 +261,6 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
         return {
           success: res.success,
           message: res.message,
-          coords,
           verifiedAtTime: res.verifiedAtTime,
         };
       } catch (err: any) {
@@ -255,17 +283,23 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
           token
         );
 
+        const resolvedReason = reason || 'عدم حضور راننده';
+
         setDrivers((prev) =>
           prev.map((d) =>
             d.tripWorkCalendarId === tripWorkCalendarId
               ? {
                   ...d,
                   arrivalStatus: 'not_arrived',
+                  isConfirmedBySupervisor: true,
+                  supervisorNote: resolvedReason,
+                  executionStatus: 4,
+                  executionStatusTitle: 'عدم حضور راننده (غیبت)',
                   gpsStamp: {
                     latitude: 0,
                     longitude: 0,
                     verifiedAtTime: res.verifiedAtTime,
-                    note: reason || 'عدم حضور راننده',
+                    note: resolvedReason,
                   },
                 }
               : d
@@ -315,6 +349,8 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
               ? {
                   ...d,
                   hasLangi: true,
+                  actualDriverFullName: fullName,
+                  actualDriverMobile: payload.phoneNumber,
                   langi: res.langiItem,
                 }
               : d
@@ -340,13 +376,32 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
 
   const stats = useMemo<SarshooferStats>(() => {
     const totalDrivers = drivers.length;
-    const arrivedCount = drivers.filter((d) => d.arrivalStatus === 'arrived').length;
-    const notArrivedCount = drivers.filter((d) => d.arrivalStatus === 'not_arrived').length;
-    const pendingCount = drivers.filter((d) => d.arrivalStatus === 'pending').length;
+    const arrivedCount = drivers.filter(
+      (d) => d.isConfirmedBySupervisor && d.executionStatus !== 4 && d.arrivalStatus === 'arrived'
+    ).length;
+    const driverConfirmedCount = drivers.filter(
+      (d) =>
+        d.driverConfirmedArrival ||
+        d.executionStatus === 1 ||
+        d.executionStatus === 3 ||
+        Boolean(d.startedAtUtc) ||
+        Boolean(d.endedAtUtc)
+    ).length;
+    const completedByDriverCount = drivers.filter(
+      (d) => d.executionStatus === 3 || Boolean(d.endedAtUtc)
+    ).length;
+    const notArrivedCount = drivers.filter(
+      (d) => d.arrivalStatus === 'not_arrived' || d.executionStatus === 4
+    ).length;
+    const pendingCount = drivers.filter(
+      (d) => !d.isConfirmedBySupervisor && d.arrivalStatus === 'pending'
+    ).length;
     const langiCount = drivers.filter((d) => d.hasLangi).length;
     return {
       totalDrivers,
       arrivedCount,
+      driverConfirmedCount,
+      completedByDriverCount,
       notArrivedCount,
       pendingCount,
       langiCount,
@@ -381,6 +436,7 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
       dailyBoard,
       serviceLocations,
       companyServiceLocationId,
+      setCompanyServiceLocationId,
       entering,
       langiList,
       stats,

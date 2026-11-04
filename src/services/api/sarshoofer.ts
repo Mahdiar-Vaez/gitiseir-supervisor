@@ -1,14 +1,19 @@
-import { apiClient } from './client';
-import { API_ENDPOINTS } from './endpoints';
 import {
   TodayDriverItem,
   ArrivalStatus,
   CreateLangiPayload,
   LangiRequestItem,
   SupervisorDailyBoardResult,
+  DailyBoardTripProgress,
 } from './types';
-import { Coordinates } from '@/services/location/gps';
-import { getCurrentJalaliDate, getCurrentPersianTime } from '@/utils/jalali';
+import { getCurrentPersianTime, formatUtcToIranTime } from '@/utils/jalali';
+import {
+  sanitizeDigitsInput,
+  formatPhoneForApi,
+  formatNationalCodeForApi,
+  formatBankNumberForApi,
+  formatPriceForApi,
+} from '@/utils/persian-digits';
 import {
   getSupervisorDailyBoardApi,
   confirmAttendanceApi,
@@ -16,23 +21,48 @@ import {
   markDriverAbsentApi,
 } from './supervisor';
 
+function formatUtcToTimeLabel(utcStr?: string | null): string {
+  return formatUtcToIranTime(utcStr);
+}
+
+function getPersianExecutionStatusTitle(
+  executionStatus: number,
+  rawTitle?: string | null
+): string {
+  if (executionStatus === 4 || rawTitle === 'DriverAbsent') {
+    return 'عدم حضور راننده (غیبت)';
+  }
+  if (executionStatus === 3) {
+    return 'پایان‌یافته توسط راننده';
+  }
+  if (executionStatus === 1 || executionStatus === 2) {
+    return 'در حال اجرا توسط راننده';
+  }
+  return 'در انتظار شروع راننده';
+}
+
 /**
- * Map a backend item (from daily-board or day-trips-grid) into TodayDriverItem
+ * Map a backend item from /api/SupervisorsMobile/Trip/daily-board into TodayDriverItem
  */
 export function mapBackendTripToDriverItem(
   item: any,
-  idx: number,
+  _idx: number,
   locationTitleFallback?: string
 ): TodayDriverItem {
   const td = item.temporaryDriver;
+  const startedTime = formatUtcToTimeLabel(item.startedAtUtc);
+  const endedTime = formatUtcToTimeLabel(item.endedAtUtc);
+
   const start =
     item.scheduledStartTime?.slice(0, 5) ||
     item.outbound?.start?.slice(0, 5) ||
-    '00:00';
+    startedTime ||
+    '۰۰:۰۰';
   const end =
     item.scheduledEndTime?.slice(0, 5) ||
     item.outbound?.end?.slice(0, 5) ||
-    '00:00';
+    endedTime ||
+    '۰۰:۰۰';
   const price =
     item.price ??
     item.outbound?.price ??
@@ -43,103 +73,220 @@ export function mapBackendTripToDriverItem(
   const calendarId =
     item.calendarDayId || item.tripWorkCalendarId || '';
 
-  const langiItem: LangiRequestItem | null =
-    item.hasTemporaryDriver && td
+  const plannedName =
+    item.plannedDriverFullName || item.driverFullName || 'راننده نامشخص';
+  const plannedMobile =
+    item.plannedDriverMobile || item.driverTel || item.driverPhone || '';
+  const actualName =
+    item.actualDriverFullName ||
+    item.temporaryDriverFullName ||
+    plannedName;
+  const actualMobile =
+    item.actualDriverMobile ||
+    item.temporaryDriverPhone ||
+    plannedMobile;
+
+  const hasTempDriver = Boolean(item.hasTemporaryDriver || item.temporaryDriverId);
+  const rawActualName = (item.actualDriverFullName || '').trim();
+  const isActualDistinctFromPlanned =
+    Boolean(rawActualName) &&
+    rawActualName !== plannedName.trim() &&
+    rawActualName !== 'راننده موقت' &&
+    rawActualName !== 'راننده موقت (لنگی)';
+
+  const rawTempFullName = (
+    item.temporaryDriverFullName ||
+    (td ? `${td.name || ''} ${td.family || ''}`.trim() : '') ||
+    (hasTempDriver && isActualDistinctFromPlanned ? rawActualName : '')
+  ).trim();
+
+  const splitParts = rawTempFullName ? rawTempFullName.split(/\s+/) : [];
+  const parsedTempFirstName = td?.name?.trim() || splitParts[0] || '';
+  const parsedTempLastName =
+    td?.family?.trim() ||
+    (splitParts.length > 1 ? splitParts.slice(1).join(' ') : '');
+
+  const langiItem: LangiRequestItem | null = hasTempDriver
+    ? {
+        id: td?.id || item.temporaryDriverId || `${calendarId}-langi`,
+        tripWorkCalendarId: calendarId,
+        tripId: item.tripId,
+        tripName: item.tripName || 'سرویس ثبت شده',
+        serviceLocationTitle:
+          item.companyServiceLocationTitle ||
+          locationTitleFallback ||
+          item.serviceLocationTitle ||
+          item.tripName ||
+          '',
+        scheduledTime: `${start} - ${end}`,
+        originalDriverName: plannedName,
+        originalDriverPhone: plannedMobile,
+        name: parsedTempFirstName || 'راننده موقت',
+        family: parsedTempLastName,
+        nationalCode: sanitizeDigitsInput(td?.nationalCode || '', 10),
+        phoneNumber: sanitizeDigitsInput(
+          td?.phoneNumber ||
+            item.temporaryDriverPhone ||
+            (isActualDistinctFromPlanned ? item.actualDriverMobile : '') ||
+            '',
+          11
+        ),
+        price: td?.price || price,
+        paymentType: td?.cardAccountNumber && !td?.cardNumber ? 'shaba' : 'card',
+        cardAccountNumber: sanitizeDigitsInput(td?.cardAccountNumber || '', 24),
+        cardNumber: sanitizeDigitsInput(td?.cardNumber || '', 16),
+        reason: td?.reason || item.supervisorNote || 'ثبت شده در سامانه',
+        creationTimePersian: td?.creationTimePersian || 'امروز',
+        step1: {
+          accepted:
+            typeof td?.acceptOrRejectStep1 === 'object' && td?.acceptOrRejectStep1 !== null
+              ? (td.acceptOrRejectStep1 as any)?.accepted ?? true
+              : Boolean(td?.acceptOrRejectStep1 ?? true),
+          reason: 'ثبت توسط سرشوفر',
+        },
+        step2: {
+          accepted:
+            typeof td?.acceptOrRejectStep2 === 'object' && td?.acceptOrRejectStep2 !== null
+              ? (td.acceptOrRejectStep2 as any)?.accepted ?? null
+              : (td?.acceptOrRejectStep2 ?? null),
+          reason: 'بررسی واحد ناوگان',
+        },
+        step3: {
+          accepted:
+            typeof td?.acceptOrRejectStep3 === 'object' && td?.acceptOrRejectStep3 !== null
+              ? (td.acceptOrRejectStep3 as any)?.accepted ?? null
+              : (td?.acceptOrRejectStep3 ?? null),
+          reason: 'بررسی واحد مالی',
+        },
+        payCode: td?.payCode || null,
+        readyForPay: Boolean(td?.readyForPay),
+        fullyAcceptedAndPayed: Boolean(td?.fullyAcceptedAndPayed),
+      }
+    : null;
+
+  const executionStatus =
+    typeof item.executionStatus === 'number'
+      ? item.executionStatus
+      : typeof item.status === 'number'
+      ? item.status
+      : 0;
+
+  const executionStatusTitle = getPersianExecutionStatusTitle(
+    executionStatus,
+    item.executionStatusTitle
+  );
+
+  const isConfirmedBySupervisor = Boolean(
+    item.isConfirmedBySupervisor ?? item.isAttendanceConfirmed
+  );
+  const driverConfirmedArrival = Boolean(item.driverConfirmedArrival);
+  const isDriverAbsent =
+    executionStatus === 4 || item.executionStatusTitle === 'DriverAbsent';
+
+  const arrivalStatus: ArrivalStatus = isDriverAbsent
+    ? 'not_arrived'
+    : isConfirmedBySupervisor
+    ? 'arrived'
+    : 'pending';
+
+  const supervisorNote = item.supervisorNote || item.attendanceNote || null;
+  const supervisorConfirmedAtUtc =
+    item.supervisorConfirmedAtUtc || item.attendanceConfirmedAtUtc || null;
+  const confirmedTimeLabel =
+    formatUtcToTimeLabel(supervisorConfirmedAtUtc) || 'ثبت شده';
+
+  const rawProgress = item.progress;
+  const progress: DailyBoardTripProgress | null =
+    rawProgress && typeof rawProgress === 'object'
       ? {
-          id: td.id || `${calendarId}-langi`,
-          tripWorkCalendarId: calendarId,
-          tripId: item.tripId,
-          tripName: item.tripName || 'سرویس ثبت شده',
-          serviceLocationTitle:
-            locationTitleFallback || item.serviceLocationTitle || item.tripName || '',
-          scheduledTime: `${start} - ${end}`,
-          originalDriverName: item.driverFullName || 'بدون نام',
-          originalDriverPhone: item.driverTel || '',
-          name: td.name || '',
-          family: td.family || '',
-          nationalCode: td.nationalCode || '',
-          phoneNumber: td.phoneNumber || '',
-          price: td.price || price,
-          paymentType: td.cardNumber && !td.cardAccountNumber ? 'card' : 'shaba',
-          cardAccountNumber: td.cardAccountNumber || '',
-          cardNumber: td.cardNumber || '',
-          reason: td.reason || 'ثبت شده در سامانه',
-          creationTimePersian: td.creationTimePersian || 'امروز',
-          step1: {
-            accepted:
-              typeof td.acceptOrRejectStep1 === 'object' && td.acceptOrRejectStep1 !== null
-                ? (td.acceptOrRejectStep1 as any)?.accepted ?? true
-                : Boolean(td.acceptOrRejectStep1 ?? true),
-            reason: 'ثبت توسط سرشوفر',
-          },
-          step2: {
-            accepted:
-              typeof td.acceptOrRejectStep2 === 'object' && td.acceptOrRejectStep2 !== null
-                ? (td.acceptOrRejectStep2 as any)?.accepted ?? null
-                : (td.acceptOrRejectStep2 ?? null),
-            reason: 'بررسی واحد ناوگان',
-          },
-          step3: {
-            accepted:
-              typeof td.acceptOrRejectStep3 === 'object' && td.acceptOrRejectStep3 !== null
-                ? (td.acceptOrRejectStep3 as any)?.accepted ?? null
-                : (td.acceptOrRejectStep3 ?? null),
-            reason: 'بررسی واحد مالی',
-          },
-          payCode: td.payCode || null,
-          readyForPay: Boolean(td.readyForPay),
-          fullyAcceptedAndPayed: Boolean(td.fullyAcceptedAndPayed),
+          totalStations: Number(rawProgress.totalStations) || 0,
+          visitedStations: Number(rawProgress.visitedStations) || 0,
+          remainingStations: Number(rawProgress.remainingStations) || 0,
+          progressPercent: Number(rawProgress.progressPercent) || 0,
+          stations: Array.isArray(rawProgress.stations)
+            ? [...rawProgress.stations].sort(
+                (a, b) => (a.stopOrder || 0) - (b.stopOrder || 0)
+              )
+            : [],
+          nextStationId: rawProgress.nextStationId ?? null,
+          nextStationTitle: rawProgress.nextStationTitle ?? null,
+          nextStopOrder: rawProgress.nextStopOrder ?? null,
         }
       : null;
 
-  const isArrived =
-    Boolean(item.isAttendanceConfirmed) ||
-    item.status === 2 ||
-    item.status === 3;
+  const licensePlate =
+    item.vehicleLicensePlate?.trim() ||
+    item.licensePlate?.trim() ||
+    'پلاک ثبت نشده';
 
   return {
     tripWorkCalendarId: calendarId,
     tripId: item.tripId || 0,
     tripName: item.tripName || 'بدون عنوان',
     serviceLocationTitle:
-      locationTitleFallback || item.serviceLocationTitle || item.tripName || 'ثبت نشده',
-    shiftLabel: item.inbound ? 'سرویس رفت و برگشت' : 'شیفت روزانه',
+      item.companyServiceLocationTitle ||
+      locationTitleFallback ||
+      item.serviceLocationTitle ||
+      item.tripName ||
+      'ثبت نشده',
+    shiftLabel:
+      item.directionTitle ||
+      (item.entering === true
+        ? 'ورودی به محل خدمت'
+        : item.entering === false
+        ? 'خروجی از محل خدمت'
+        : 'شیفت روزانه'),
     scheduledStartTime: start,
     scheduledEndTime: end,
-    driverId: item.driverId || 0,
-    driverFullName: item.driverFullName || 'راننده نامشخص',
-    driverPhone: item.driverTel || item.driverPhone || '',
-    vehicleType: item.carType || 'ثبت نشده',
+    driverId: item.plannedDriverId || item.driverId || 0,
+    driverFullName: plannedName,
+    driverPhone: actualMobile || plannedMobile,
+    plannedDriverFullName: plannedName,
+    plannedDriverMobile: plannedMobile,
+    actualDriverFullName: actualName,
+    actualDriverMobile: actualMobile,
+    vehicleType: item.carType || 'خودرو سرویس',
     vehicleColor: item.carBodyColor || '',
-    licensePlate: item.licensePlate || 'ثبت نشده',
+    licensePlate,
     passengersCount: item.passengersCount || 0,
-    stationsCount: item.stationsCount || 0,
+    stationsCount: progress?.totalStations ?? item.stationsCount ?? 0,
     price,
-    arrivalStatus: isArrived ? 'arrived' : 'pending',
-    gpsStamp: item.attendanceNote
-      ? {
-          latitude: 0,
-          longitude: 0,
-          verifiedAtTime: item.attendanceConfirmedAtUtc || 'ثبت شده',
-          note: item.attendanceNote,
-        }
-      : null,
-    hasLangi: Boolean(item.hasTemporaryDriver && langiItem),
+    arrivalStatus,
+    isConfirmedBySupervisor,
+    supervisorNote,
+    supervisorConfirmedAtUtc,
+    driverConfirmedArrival,
+    executionStatus,
+    executionStatusTitle,
+    startedAtUtc: item.startedAtUtc || null,
+    endedAtUtc: item.endedAtUtc || null,
+    entering: item.entering,
+    directionTitle: item.directionTitle || '',
+    progress,
+    gpsStamp:
+      isConfirmedBySupervisor || supervisorNote
+        ? {
+            latitude: 0,
+            longitude: 0,
+            verifiedAtTime: confirmedTimeLabel,
+            note: supervisorNote || undefined,
+          }
+        : null,
+    hasLangi: hasTempDriver,
     canRequestLangi: item.canSetTemporaryDriver !== false,
     langi: langiItem,
   };
 }
 
 /**
- * Fetch today's driver assignments & daily board for the Supervisor (100% real backend data, zero mocks).
- * Calls:
- * 1) GET /api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId={id}&entering={entering}
- * 2) GET /api/my-work-calendar/day-trips-grid?year={y}&month={m}&day={d} (when daily-board is empty)
+ * Fetch today's driver assignments & daily board for the Supervisor EXCLUSIVELY from:
+ * GET /api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId={id}[&entering={entering}]
+ * (Work calendar fallback has been completely removed per requirement).
  */
 export async function getTodayDriverAssignmentsApi(
   token?: string | null,
-  companyServiceLocationId = 18,
-  entering = true
+  companyServiceLocationId = 14,
+  entering?: boolean
 ): Promise<{
   drivers: TodayDriverItem[];
   dailyBoard: SupervisorDailyBoardResult | null;
@@ -148,61 +295,22 @@ export async function getTodayDriverAssignmentsApi(
     return { drivers: [], dailyBoard: null };
   }
 
-  let dailyBoard: SupervisorDailyBoardResult | null = null;
-  let boardError: any = null;
-
-  try {
-    const boardRes = await getSupervisorDailyBoardApi(
-      companyServiceLocationId,
-      entering,
-      token
-    );
-    if (boardRes?.result) {
-      dailyBoard = boardRes.result;
-      if (Array.isArray(boardRes.result.items) && boardRes.result.items.length > 0) {
-        const mapped = boardRes.result.items.map((item, idx) =>
-          mapBackendTripToDriverItem(
-            item,
-            idx,
-            boardRes.result.companyServiceLocationTitle
-          )
-        );
-        return { drivers: mapped, dailyBoard };
-      }
-    }
-  } catch (err) {
-    boardError = err;
-  }
-
-  // Also check today's work calendar grid so if daily-board for that location has 0 items,
-  // any trips assigned in today's work calendar are shown cleanly.
-  const today = getCurrentJalaliDate();
-  const gridEndpoint = API_ENDPOINTS.WORK_CALENDAR.DAY_TRIPS_GRID(
-    today.year,
-    today.month,
-    today.day
+  const boardRes = await getSupervisorDailyBoardApi(
+    companyServiceLocationId,
+    entering,
+    token
   );
 
-  try {
-    const gridRes = await apiClient<any[]>(gridEndpoint, {
-      method: 'GET',
-      token,
-    });
-    if (Array.isArray(gridRes?.result) && gridRes.result.length > 0) {
-      const mapped = gridRes.result.map((item, idx) =>
-        mapBackendTripToDriverItem(item, idx)
-      );
-      return { drivers: mapped, dailyBoard };
-    }
-  } catch (gridErr) {
-    if (boardError) {
-      throw boardError;
-    }
-    throw gridErr;
-  }
-
-  if (boardError && !dailyBoard) {
-    throw boardError;
+  const dailyBoard = boardRes?.result || null;
+  if (dailyBoard && Array.isArray(dailyBoard.items)) {
+    const mapped = dailyBoard.items.map((item, idx) =>
+      mapBackendTripToDriverItem(
+        item,
+        idx,
+        dailyBoard.companyServiceLocationTitle
+      )
+    );
+    return { drivers: mapped, dailyBoard };
   }
 
   return { drivers: [], dailyBoard };
@@ -216,7 +324,6 @@ export async function getTodayDriverAssignmentsApi(
 export async function submitDriverArrivalVerificationApi(
   tripWorkCalendarId: string,
   status: ArrivalStatus,
-  _coords: Coordinates,
   note?: string,
   isDelayed?: boolean,
   delayMinutes?: number,
@@ -305,19 +412,27 @@ export async function submitLangiRequestApi(
   message: string;
   langiItem: LangiRequestItem;
 }> {
+  const formattedPhone = formatPhoneForApi(payload.phoneNumber);
+  const formattedNatCode = formatNationalCodeForApi(payload.nationalCode);
+  const formattedPrice = formatPriceForApi(payload.price);
+  const cleanCard = formatBankNumberForApi(payload.cardNumber, 16);
+  const cleanShaba = formatBankNumberForApi(payload.cardAccountNumber, 24);
+
+  const resolvedCardNumber =
+    cleanCard || (cleanShaba ? cleanShaba.slice(0, 16) : '');
+  const resolvedAccountNumber = cleanShaba || cleanCard || '';
+
   const res = await assignTemporaryDriverApi(
     {
       calendarDayId: payload.tripWorkCalendarId,
       name: payload.name.trim(),
       family: payload.family.trim(),
-      phoneNumber: payload.phoneNumber.trim(),
-      nationalCode: payload.nationalCode.trim(),
-      cardNumber:
-        payload.paymentType === 'card'
-          ? payload.cardNumber.trim()
-          : payload.cardAccountNumber.trim().slice(0, 16),
+      phoneNumber: formattedPhone,
+      nationalCode: formattedNatCode,
+      cardNumber: resolvedCardNumber,
+      cardAccountNumber: resolvedAccountNumber,
       reason: payload.reason.trim() || 'جایگزینی راننده توسط سرشوفر',
-      price: Number(payload.price) || 0,
+      price: formattedPrice,
     },
     token
   );
@@ -334,13 +449,12 @@ export async function submitLangiRequestApi(
     originalDriverPhone: payload.originalDriverPhone,
     name: payload.name.trim(),
     family: payload.family.trim(),
-    nationalCode: payload.nationalCode.trim(),
-    phoneNumber: payload.phoneNumber.trim(),
-    price: payload.price,
+    nationalCode: formattedNatCode,
+    phoneNumber: formattedPhone,
+    price: formattedPrice,
     paymentType: payload.paymentType,
-    cardAccountNumber:
-      payload.paymentType === 'shaba' ? payload.cardAccountNumber : '',
-    cardNumber: payload.paymentType === 'card' ? payload.cardNumber : '',
+    cardAccountNumber: resolvedAccountNumber,
+    cardNumber: resolvedCardNumber,
     reason: payload.reason.trim() || 'جایگزینی راننده توسط سرشوفر',
     creationTimePersian: `امروز ${nowTime}`,
     step1: {
