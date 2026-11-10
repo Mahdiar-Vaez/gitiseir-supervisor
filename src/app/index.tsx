@@ -9,6 +9,7 @@ import {
   Pressable,
   ActivityIndicator,
   TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import {
@@ -19,6 +20,11 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   RefreshCw,
+  AlertTriangle,
+  CheckCircle2,
+  CheckCheck,
+  CheckSquare,
+  Square,
 } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useSarshoofer } from '@/context/SarshooferContext';
@@ -26,13 +32,12 @@ import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { toPersianDigits, toEnglishDigits } from '@/utils/persian-digits';
 import { TodayDriverItem, ArrivalStatus } from '@/services/api/types';
 import { AppHeader } from '@/components/ui/AppHeader';
-import {
-  FleetCommandBanner,
-  DriverFilterType,
-} from '@/components/ui/FleetCommandBanner';
 import { DriverAttendanceCard } from '@/components/ui/DriverAttendanceCard';
 import { ArrivalConfirmModal } from '@/components/ui/ArrivalConfirmModal';
 import { LangiRequestModal } from '@/components/ui/LangiRequestModal';
+
+type MainTabType = 'exceptions' | 'completed';
+type ExceptionSubFilter = 'all' | 'not_arrived' | 'pending' | 'langi';
 
 export default function TodayDriversScreen() {
   const { colors, isDark } = useAppTheme();
@@ -48,15 +53,27 @@ export default function TodayDriversScreen() {
     refreshing,
     refreshFleet,
     confirmDriverArrival,
+    confirmBulkDriversArrival,
+    stats,
   } = useSarshoofer();
 
+  // Primary Two-Tab View (Exceptions First vs Completed)
+  const [mainTab, setMainTab] = useState<MainTabType>('exceptions');
+  const [exceptionSubFilter, setExceptionSubFilter] =
+    useState<ExceptionSubFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeFilter, setActiveFilter] = useState<DriverFilterType>('all');
   const [locationInput, setLocationInput] = useState<string>(
     String(companyServiceLocationId)
   );
 
-  // Arrival Confirmation Modal State
+  // Bulk Selection & Approval State
+  const [selectedIdsForBulk, setSelectedIdsForBulk] = useState<Set<string>>(
+    new Set()
+  );
+  const [isBulkLoading, setIsBulkLoading] = useState<boolean>(false);
+  const [bulkConfirmVisible, setBulkConfirmVisible] = useState<boolean>(false);
+
+  // Arrival Confirmation Modal State (Individual)
   const [confirmModalVisible, setConfirmModalVisible] = useState<boolean>(false);
   const [selectedDriverForArrival, setSelectedDriverForArrival] =
     useState<TodayDriverItem | null>(null);
@@ -69,28 +86,108 @@ export default function TodayDriversScreen() {
   const [selectedDriverForLangi, setSelectedDriverForLangi] =
     useState<TodayDriverItem | null>(null);
 
-  const filteredDrivers = useMemo(() => {
-    return drivers.filter((item) => {
-      if (activeFilter === 'pending' && item.arrivalStatus !== 'pending') return false;
-      if (activeFilter === 'arrived' && item.arrivalStatus !== 'arrived') return false;
-      if (activeFilter === 'not_arrived' && item.arrivalStatus !== 'not_arrived')
-        return false;
-      if (activeFilter === 'langi' && !item.hasLangi) return false;
+  // 1. Pending drivers eligible for Bulk Approval
+  const eligiblePendingDrivers = useMemo(() => {
+    return drivers.filter((item) => item.arrivalStatus === 'pending');
+  }, [drivers]);
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
+  // Target IDs for Bulk Approval (if no explicit subset is selected, default to all pending)
+  const targetBulkIds = useMemo(() => {
+    if (selectedIdsForBulk.size > 0) {
+      return Array.from(selectedIdsForBulk);
+    }
+    return eligiblePendingDrivers.map((d) => d.tripWorkCalendarId);
+  }, [selectedIdsForBulk, eligiblePendingDrivers]);
+
+  const allPendingSelected = useMemo(() => {
+    if (eligiblePendingDrivers.length === 0) return false;
+    return (
+      selectedIdsForBulk.size === eligiblePendingDrivers.length &&
+      eligiblePendingDrivers.every((d) =>
+        selectedIdsForBulk.has(d.tripWorkCalendarId)
+      )
+    );
+  }, [selectedIdsForBulk, eligiblePendingDrivers]);
+
+  const handleToggleSelectAll = () => {
+    if (allPendingSelected) {
+      setSelectedIdsForBulk(new Set());
+    } else {
+      setSelectedIdsForBulk(
+        new Set(eligiblePendingDrivers.map((d) => d.tripWorkCalendarId))
+      );
+    }
+  };
+
+  const handleToggleSelectDriver = (driver: TodayDriverItem) => {
+    setSelectedIdsForBulk((prev) => {
+      const next = new Set(prev);
+      if (next.has(driver.tripWorkCalendarId)) {
+        next.delete(driver.tripWorkCalendarId);
+      } else {
+        next.add(driver.tripWorkCalendarId);
+      }
+      return next;
+    });
+  };
+
+  // 2. Exception Drivers (Tab 1) - Sorted Exceptions First (not_arrived at top in red!)
+  const exceptionsDrivers = useMemo(() => {
+    let list = drivers.filter((d) => d.arrivalStatus !== 'arrived');
+
+    if (exceptionSubFilter === 'not_arrived') {
+      list = list.filter((d) => d.arrivalStatus === 'not_arrived');
+    } else if (exceptionSubFilter === 'pending') {
+      list = list.filter((d) => d.arrivalStatus === 'pending');
+    } else if (exceptionSubFilter === 'langi') {
+      list = list.filter((d) => d.hasLangi);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((item) => {
         const matchName = item.driverFullName.toLowerCase().includes(q);
         const matchTrip = item.tripName.toLowerCase().includes(q);
         const matchPlate = item.licensePlate.toLowerCase().includes(q);
         const matchLangi =
           item.langi &&
           `${item.langi.name} ${item.langi.family}`.toLowerCase().includes(q);
-        if (!matchName && !matchTrip && !matchPlate && !matchLangi) return false;
-      }
+        return matchName || matchTrip || matchPlate || matchLangi;
+      });
+    }
 
-      return true;
+    // Crucial Sort Rule: not_arrived drivers first, then langi, then time
+    return [...list].sort((a, b) => {
+      if (a.arrivalStatus === 'not_arrived' && b.arrivalStatus !== 'not_arrived')
+        return -1;
+      if (b.arrivalStatus === 'not_arrived' && a.arrivalStatus !== 'not_arrived')
+        return 1;
+      if (a.hasLangi && !b.hasLangi) return -1;
+      if (b.hasLangi && !a.hasLangi) return 1;
+      return a.scheduledStartTime.localeCompare(b.scheduledStartTime);
     });
-  }, [drivers, activeFilter, searchQuery]);
+  }, [drivers, exceptionSubFilter, searchQuery]);
+
+  // 3. Completed Drivers (Tab 2)
+  const completedDrivers = useMemo(() => {
+    let list = drivers.filter((d) => d.arrivalStatus === 'arrived');
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((item) => {
+        const matchName = item.driverFullName.toLowerCase().includes(q);
+        const matchTrip = item.tripName.toLowerCase().includes(q);
+        const matchPlate = item.licensePlate.toLowerCase().includes(q);
+        return matchName || matchTrip || matchPlate;
+      });
+    }
+
+    return [...list].sort((a, b) =>
+      a.scheduledStartTime.localeCompare(b.scheduledStartTime)
+    );
+  }, [drivers, searchQuery]);
+
+  const exceptionsTotalCount = stats.notArrivedCount + stats.pendingCount;
 
   const handleApplyLocationId = () => {
     const parsed = Number(toEnglishDigits(locationInput).replace(/\D/g, ''));
@@ -139,12 +236,25 @@ export default function TodayDriversScreen() {
     }
   };
 
+  // One-Click Bulk Approval Action (Strictly Pessimistic)
+  const handleExecuteBulkApproval = async () => {
+    if (targetBulkIds.length === 0) return;
+    setIsBulkLoading(true);
+    try {
+      await confirmBulkDriversArrival(targetBulkIds);
+      setSelectedIdsForBulk(new Set());
+      setBulkConfirmVisible(false);
+    } finally {
+      setIsBulkLoading(false);
+    }
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <AppHeader />
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 28 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 32 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -156,7 +266,7 @@ export default function TodayDriversScreen() {
           />
         }
       >
-        {/* 0. Daily Board Location & Direction Filter Card */}
+        {/* 0. Daily Board Location & Direction Card */}
         <View
           style={[
             styles.dailyBoardFilterCard,
@@ -240,7 +350,7 @@ export default function TodayDriversScreen() {
             </View>
           </View>
 
-          {/* Service Location Selector or ID Input */}
+          {/* Service Location Selector */}
           {serviceLocations.length > 0 ? (
             <ScrollView
               horizontal
@@ -327,7 +437,10 @@ export default function TodayDriversScreen() {
             <Text
               style={[
                 styles.locIdLabel,
-                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
+                {
+                  color: colors.textSecondary,
+                  fontFamily: Typography.fontFamily.medium,
+                },
               ]}
             >
               کد محل خدمت:
@@ -355,7 +468,10 @@ export default function TodayDriversScreen() {
               <Text
                 style={[
                   styles.boardCountsText,
-                  { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
+                  {
+                    color: colors.textSecondary,
+                    fontFamily: Typography.fontFamily.regular,
+                  },
                 ]}
               >
                 کل: {toPersianDigits(dailyBoard.totalCount)} | زمان‌بندی:{' '}
@@ -367,14 +483,360 @@ export default function TodayDriversScreen() {
           ) : null}
         </View>
 
-        {/* 1. Compact Attendance Summary & Filter Strip */}
-        <FleetCommandBanner
-          activeFilter={activeFilter}
-          onSelectFilter={setActiveFilter}
-          onOpenNewLangi={() => router.navigate('/calendar' as any)}
-        />
+        {/* 1. Primary Two Tabs Navigation (Exceptions First vs Completed) */}
+        <View style={styles.mainTabsContainer}>
+          <TouchableOpacity
+            onPress={() => setMainTab('exceptions')}
+            style={[
+              styles.mainTabBtn,
+              {
+                backgroundColor:
+                  mainTab === 'exceptions'
+                    ? isDark
+                      ? 'rgba(239, 68, 68, 0.16)'
+                      : '#FEF2F2'
+                    : isDark
+                    ? '#071318'
+                    : '#F8FAFC',
+                borderColor:
+                  mainTab === 'exceptions' ? '#EF4444' : colors.border,
+              },
+            ]}
+          >
+            <View style={styles.tabBadgeRow}>
+              {exceptionsTotalCount > 0 ? (
+                <View
+                  style={[
+                    styles.tabBadge,
+                    {
+                      backgroundColor:
+                        stats.notArrivedCount > 0 ? '#EF4444' : colors.gold,
+                    },
+                  ]}
+                >
+                  <Text style={styles.tabBadgeText}>
+                    {toPersianDigits(exceptionsTotalCount)}
+                  </Text>
+                </View>
+              ) : null}
+              <AlertTriangle
+                size={16}
+                color={mainTab === 'exceptions' ? '#EF4444' : colors.textMuted}
+              />
+            </View>
+            <Text
+              style={[
+                styles.mainTabText,
+                {
+                  color: mainTab === 'exceptions' ? '#EF4444' : colors.textMuted,
+                  fontFamily:
+                    mainTab === 'exceptions'
+                      ? Typography.fontFamily.bold
+                      : Typography.fontFamily.medium,
+                },
+              ]}
+            >
+              نیازمند بررسی و استثناها
+            </Text>
+          </TouchableOpacity>
 
-        {/* 2. Search Input */}
+          <TouchableOpacity
+            onPress={() => setMainTab('completed')}
+            style={[
+              styles.mainTabBtn,
+              {
+                backgroundColor:
+                  mainTab === 'completed'
+                    ? isDark
+                      ? 'rgba(16, 185, 129, 0.16)'
+                      : '#F0FDF4'
+                    : isDark
+                    ? '#071318'
+                    : '#F8FAFC',
+                borderColor:
+                  mainTab === 'completed' ? '#10B981' : colors.border,
+              },
+            ]}
+          >
+            <View style={styles.tabBadgeRow}>
+              {stats.arrivedCount > 0 ? (
+                <View
+                  style={[
+                    styles.tabBadge,
+                    { backgroundColor: '#10B981' },
+                  ]}
+                >
+                  <Text style={styles.tabBadgeText}>
+                    {toPersianDigits(stats.arrivedCount)}
+                  </Text>
+                </View>
+              ) : null}
+              <CheckCircle2
+                size={16}
+                color={mainTab === 'completed' ? '#10B981' : colors.textMuted}
+              />
+            </View>
+            <Text
+              style={[
+                styles.mainTabText,
+                {
+                  color: mainTab === 'completed' ? '#10B981' : colors.textMuted,
+                  fontFamily:
+                    mainTab === 'completed'
+                      ? Typography.fontFamily.bold
+                      : Typography.fontFamily.medium,
+                },
+              ]}
+            >
+              تکمیل و تأییدشده
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 2. Sub-filters for Exceptions Tab */}
+        {mainTab === 'exceptions' && (
+          <View style={styles.subFiltersRow}>
+            <TouchableOpacity
+              onPress={() => setExceptionSubFilter('all')}
+              style={[
+                styles.subFilterChip,
+                {
+                  backgroundColor:
+                    exceptionSubFilter === 'all'
+                      ? colors.commandBg
+                      : 'transparent',
+                  borderColor:
+                    exceptionSubFilter === 'all'
+                      ? colors.command
+                      : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.subFilterChipText,
+                  {
+                    color:
+                      exceptionSubFilter === 'all'
+                        ? colors.command
+                        : colors.textSecondary,
+                    fontFamily:
+                      exceptionSubFilter === 'all'
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                همه ({toPersianDigits(exceptionsTotalCount)})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setExceptionSubFilter('not_arrived')}
+              style={[
+                styles.subFilterChip,
+                {
+                  backgroundColor:
+                    exceptionSubFilter === 'not_arrived'
+                      ? 'rgba(239, 68, 68, 0.14)'
+                      : 'transparent',
+                  borderColor:
+                    exceptionSubFilter === 'not_arrived'
+                      ? '#EF4444'
+                      : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.subFilterChipText,
+                  {
+                    color:
+                      exceptionSubFilter === 'not_arrived'
+                        ? '#EF4444'
+                        : colors.textSecondary,
+                    fontFamily:
+                      exceptionSubFilter === 'not_arrived'
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                نرسیده‌ها ({toPersianDigits(stats.notArrivedCount)})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setExceptionSubFilter('pending')}
+              style={[
+                styles.subFilterChip,
+                {
+                  backgroundColor:
+                    exceptionSubFilter === 'pending'
+                      ? colors.goldBg
+                      : 'transparent',
+                  borderColor:
+                    exceptionSubFilter === 'pending'
+                      ? colors.gold
+                      : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.subFilterChipText,
+                  {
+                    color:
+                      exceptionSubFilter === 'pending'
+                        ? colors.gold
+                        : colors.textSecondary,
+                    fontFamily:
+                      exceptionSubFilter === 'pending'
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                در انتظار ({toPersianDigits(stats.pendingCount)})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setExceptionSubFilter('langi')}
+              style={[
+                styles.subFilterChip,
+                {
+                  backgroundColor:
+                    exceptionSubFilter === 'langi'
+                      ? colors.langiBg
+                      : 'transparent',
+                  borderColor:
+                    exceptionSubFilter === 'langi'
+                      ? colors.langi
+                      : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.subFilterChipText,
+                  {
+                    color:
+                      exceptionSubFilter === 'langi'
+                        ? colors.langi
+                        : colors.textSecondary,
+                    fontFamily:
+                      exceptionSubFilter === 'langi'
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                لنگی ({toPersianDigits(stats.langiCount)})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* 3. Bulk Approval Action Bar (Only on Exceptions Tab when pending drivers exist) */}
+        {mainTab === 'exceptions' && eligiblePendingDrivers.length > 0 && (
+          <View
+            style={[
+              styles.bulkApprovalCard,
+              {
+                backgroundColor: isDark ? '#081720' : '#F0FDFA',
+                borderColor: colors.command,
+              },
+            ]}
+          >
+            <View style={styles.bulkTopRow}>
+              <Pressable
+                onPress={handleToggleSelectAll}
+                style={styles.bulkSelectAllRow}
+                hitSlop={6}
+              >
+                <Text
+                  style={[
+                    styles.bulkSelectAllText,
+                    {
+                      color: colors.textSecondary,
+                      fontFamily: Typography.fontFamily.medium,
+                    },
+                  ]}
+                >
+                  {allPendingSelected ? 'لغو انتخاب همه' : 'انتخاب همه حاضران'}
+                </Text>
+                {allPendingSelected ? (
+                  <CheckSquare size={18} color={colors.command} />
+                ) : (
+                  <Square size={18} color={colors.textMuted} />
+                )}
+              </Pressable>
+
+              <View style={styles.bulkTitleRow}>
+                <Text
+                  style={[
+                    styles.bulkTitleText,
+                    { color: colors.command, fontFamily: Typography.fontFamily.bold },
+                  ]}
+                >
+                  تأیید یک‌باره رانندگان حاضر (Bulk Approval)
+                </Text>
+                <CheckCheck size={18} color={colors.command} />
+              </View>
+            </View>
+
+            <Text
+              style={[
+                styles.bulkDescText,
+                {
+                  color: colors.textSecondary,
+                  fontFamily: Typography.fontFamily.regular,
+                },
+              ]}
+            >
+              {selectedIdsForBulk.size > 0
+                ? `${toPersianDigits(
+                    selectedIdsForBulk.size
+                  )} راننده به‌صورت انتخابی مشخص شده‌اند.`
+                : `با فشردن دکمه زیر، حضور تمام ${toPersianDigits(
+                    eligiblePendingDrivers.length
+                  )} راننده در انتظار در یک کلیک ثبت می‌شود.`}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => setBulkConfirmVisible(true)}
+              disabled={isBulkLoading || targetBulkIds.length === 0}
+              style={[
+                styles.bulkConfirmBtn,
+                {
+                  backgroundColor:
+                    targetBulkIds.length > 0 ? colors.command : colors.border,
+                  opacity: isBulkLoading || targetBulkIds.length === 0 ? 0.6 : 1,
+                },
+              ]}
+            >
+              {isBulkLoading ? (
+                <ActivityIndicator size="small" color="#071318" />
+              ) : (
+                <>
+                  <CheckCheck size={18} color="#071318" />
+                  <Text
+                    style={[
+                      styles.bulkConfirmBtnText,
+                      { fontFamily: Typography.fontFamily.bold },
+                    ]}
+                  >
+                    تأیید دسته‌جمعی {toPersianDigits(targetBulkIds.length)} راننده
+                    حاضر
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* 4. Search Input Box */}
         <View
           style={[
             styles.searchBox,
@@ -388,7 +850,7 @@ export default function TodayDriversScreen() {
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="جستجوی نام راننده، پلاک یا سرویس..."
+            placeholder="جستجوی نام راننده، شماره پلاک یا مسیر..."
             placeholderTextColor={colors.textMuted}
             style={[
               styles.searchInput,
@@ -405,7 +867,7 @@ export default function TodayDriversScreen() {
           )}
         </View>
 
-        {/* 3. Section Header: Today's Drivers List */}
+        {/* 5. Section Header with Dynamic Count */}
         <View style={styles.sectionHeader}>
           <Text
             style={[
@@ -413,7 +875,12 @@ export default function TodayDriversScreen() {
               { color: colors.textMuted, fontFamily: Typography.fontFamily.medium },
             ]}
           >
-            {toPersianDigits(filteredDrivers.length)} سرویس در سرور
+            {toPersianDigits(
+              mainTab === 'exceptions'
+                ? exceptionsDrivers.length
+                : completedDrivers.length
+            )}{' '}
+            مورد
           </Text>
 
           <View style={styles.sectionTitleGroup}>
@@ -423,18 +890,23 @@ export default function TodayDriversScreen() {
                 { color: colors.text, fontFamily: Typography.fontFamily.bold },
               ]}
             >
-              لیست راننده‌ها و سرویس‌های امروز
+              {mainTab === 'exceptions'
+                ? 'فهرست رانندگان نیازمند بررسی و پیگیری'
+                : 'فهرست رانندگان تأییدشده و حاضر'}
             </Text>
             <View
               style={[
                 styles.accentBar,
-                { backgroundColor: colors.command },
+                {
+                  backgroundColor:
+                    mainTab === 'exceptions' ? '#EF4444' : '#10B981',
+                },
               ]}
             />
           </View>
         </View>
 
-        {/* 4. Drivers Cards List */}
+        {/* 6. Drivers Cards List */}
         <View style={styles.cardsList}>
           {loading ? (
             <View style={styles.loadingState}>
@@ -445,15 +917,72 @@ export default function TodayDriversScreen() {
                   { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                در حال دریافت فهرست واقعی رانندگان امروز از سرور...
+                در حال دریافت فهرست واقعی رانندگان از سرور...
               </Text>
             </View>
-          ) : filteredDrivers.length > 0 ? (
-            filteredDrivers.map((driverItem) => (
+          ) : mainTab === 'exceptions' ? (
+            exceptionsDrivers.length > 0 ? (
+              exceptionsDrivers.map((driverItem) => {
+                const isAbsentException =
+                  driverItem.arrivalStatus === 'not_arrived';
+                const isPendingSelectable =
+                  driverItem.arrivalStatus === 'pending';
+                const isSelected = selectedIdsForBulk.has(
+                  driverItem.tripWorkCalendarId
+                );
+
+                return (
+                  <DriverAttendanceCard
+                    key={driverItem.tripWorkCalendarId}
+                    item={driverItem}
+                    isProcessingGps={processingId === driverItem.tripWorkCalendarId}
+                    isExceptionHighlight={isAbsentException}
+                    selectable={isPendingSelectable}
+                    isSelected={isSelected}
+                    onToggleSelect={handleToggleSelectDriver}
+                    onPressArrivalAction={handleOpenArrivalModal}
+                    onPressLangiAction={handleOpenLangiModal}
+                  />
+                );
+              })
+            ) : (
+              <View
+                style={[
+                  styles.emptyStateCard,
+                  {
+                    backgroundColor: isDark ? '#0D1F28' : '#FFFFFF',
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <CheckCircle2 size={32} color="#10B981" />
+                <Text
+                  style={[
+                    styles.emptyStateTitle,
+                    { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                  ]}
+                >
+                  عالی! موردی در این تب نیاز به بررسی ندارد
+                </Text>
+                <Text
+                  style={[
+                    styles.emptyStateSubtitle,
+                    { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
+                  ]}
+                >
+                  تمام رانندگان این شیفت بررسی شده‌اند یا وضعیت حضور آن‌ها ثبت گردیده
+                  است.
+                </Text>
+              </View>
+            )
+          ) : completedDrivers.length > 0 ? (
+            completedDrivers.map((driverItem) => (
               <DriverAttendanceCard
                 key={driverItem.tripWorkCalendarId}
                 item={driverItem}
                 isProcessingGps={processingId === driverItem.tripWorkCalendarId}
+                isExceptionHighlight={false}
+                selectable={false}
                 onPressArrivalAction={handleOpenArrivalModal}
                 onPressLangiAction={handleOpenLangiModal}
               />
@@ -468,14 +997,14 @@ export default function TodayDriversScreen() {
                 },
               ]}
             >
-              <Users size={26} color={colors.command} />
+              <Users size={30} color={colors.command} />
               <Text
                 style={[
                   styles.emptyStateTitle,
                   { color: colors.text, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                هیچ راننده یا سرویسی برای امروز در سرور یافت نشد
+                هنوز راننده‌ای در وضعیت تکمیل و تایید ثبت نشده است
               </Text>
               <Text
                 style={[
@@ -483,16 +1012,15 @@ export default function TodayDriversScreen() {
                   { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                {dailyBoard
-                  ? `برای محل خدمت «${dailyBoard.companyServiceLocationTitle}» (${dailyBoard.directionTitle}) در حال حاضر ۰ سرویس در سرور ثبت شده است. همچنین می‌توانید از تب «تقویم کاری» سایر روزها را بررسی و مدیریت کنید.`
-                  : 'می‌توانید کد محل خدمت دیگری را استعلام کنید یا از تب «تقویم کاری» سفرهای هر روز را مشاهده و مدیریت نمایید.'}
+                می‌توانید از تب «نیازمند بررسی و استثناها»، حضور رانندگان حاضر را با
+                یک کلیک تأیید کنید.
               </Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Modal 1: Confirm Arrival / Non-Arrival */}
+      {/* Modal 1: Individual Arrival / Absence Confirmation */}
       <ArrivalConfirmModal
         visible={confirmModalVisible}
         driverItem={selectedDriverForArrival}
@@ -507,6 +1035,120 @@ export default function TodayDriversScreen() {
         preselectedDriver={selectedDriverForLangi}
         onClose={() => setLangiModalVisible(false)}
       />
+
+      {/* Modal 3: Bulk Approval Confirmation Dialog */}
+      <Modal
+        visible={bulkConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isBulkLoading) setBulkConfirmVisible(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.bulkModalCard,
+              {
+                backgroundColor: isDark ? '#0B151C' : '#FFFFFF',
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={styles.modalHeaderRow}>
+              <View
+                style={[
+                  styles.modalIconWrap,
+                  { backgroundColor: colors.commandBg },
+                ]}
+              >
+                <CheckCheck size={22} color={colors.command} />
+              </View>
+              <Text
+                style={[
+                  styles.modalTitleText,
+                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
+                ]}
+              >
+                تأیید دسته‌جمعی حضور رانندگان
+              </Text>
+            </View>
+
+            <Text
+              style={[
+                styles.modalDescText,
+                {
+                  color: colors.textSecondary,
+                  fontFamily: Typography.fontFamily.regular,
+                },
+              ]}
+            >
+              آیا از ثبت همزمان حضور{' '}
+              <Text
+                style={{
+                  color: colors.command,
+                  fontFamily: Typography.fontFamily.bold,
+                }}
+              >
+                {toPersianDigits(targetBulkIds.length)} راننده
+              </Text>{' '}
+              در سامانه گیتی‌سیر اطمینان دارید؟ اطلاعات حضور و موقعیت جغرافیایی برای
+              تمامی این رانندگان در سرور ثبت خواهد شد.
+            </Text>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                onPress={() => setBulkConfirmVisible(false)}
+                disabled={isBulkLoading}
+                style={[
+                  styles.modalCancelBtn,
+                  { borderColor: colors.border },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.modalCancelText,
+                    {
+                      color: colors.textMuted,
+                      fontFamily: Typography.fontFamily.medium,
+                    },
+                  ]}
+                >
+                  انصراف
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleExecuteBulkApproval}
+                disabled={isBulkLoading}
+                style={[
+                  styles.modalConfirmBtn,
+                  {
+                    backgroundColor: colors.command,
+                    opacity: isBulkLoading ? 0.7 : 1,
+                  },
+                ]}
+              >
+                {isBulkLoading ? (
+                  <ActivityIndicator size="small" color="#071318" />
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} color="#071318" />
+                    <Text
+                      style={[
+                        styles.modalConfirmText,
+                        { fontFamily: Typography.fontFamily.bold },
+                      ]}
+                    >
+                      تأیید و ثبت در سرور
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -613,6 +1255,101 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'right',
   },
+  mainTabsContainer: {
+    flexDirection: 'row-reverse',
+    gap: 8,
+  },
+  mainTabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  tabBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  tabBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    minWidth: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadgeText: {
+    fontSize: 10.5,
+    color: '#FFFFFF',
+    fontFamily: Typography.fontFamily.bold,
+  },
+  mainTabText: {
+    fontSize: 12.5,
+    textAlign: 'center',
+  },
+  subFiltersRow: {
+    flexDirection: 'row-reverse',
+    gap: 6,
+    justifyContent: 'flex-start',
+    flexWrap: 'wrap',
+  },
+  subFilterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  subFilterChipText: {
+    fontSize: 11,
+  },
+  bulkApprovalCard: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    padding: 12,
+    gap: 8,
+  },
+  bulkTopRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bulkTitleRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bulkTitleText: {
+    fontSize: 13,
+  },
+  bulkSelectAllRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
+  },
+  bulkSelectAllText: {
+    fontSize: 11.5,
+  },
+  bulkDescText: {
+    fontSize: 11.5,
+    textAlign: 'right',
+    lineHeight: 18,
+  },
+  bulkConfirmBtn: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 40,
+    borderRadius: BorderRadius.md,
+  },
+  bulkConfirmBtnText: {
+    fontSize: 12.5,
+    color: '#071318',
+  },
   searchBox: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
@@ -676,5 +1413,71 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  bulkModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    padding: 18,
+    gap: 14,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 10,
+  },
+  modalIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitleText: {
+    fontSize: 14.5,
+    flex: 1,
+    textAlign: 'right',
+  },
+  modalDescText: {
+    fontSize: 12.5,
+    textAlign: 'right',
+    lineHeight: 20,
+  },
+  modalActionsRow: {
+    flexDirection: 'row-reverse',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalConfirmBtn: {
+    flex: 1.3,
+    height: 42,
+    borderRadius: BorderRadius.md,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  modalConfirmText: {
+    fontSize: 12.5,
+    color: '#071318',
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelText: {
+    fontSize: 12.5,
   },
 });

@@ -16,6 +16,7 @@ import { getServiceLocationsApi } from '@/services/api/supervisor';
 import { getCurrentCoordinates, Coordinates } from '@/services/location/gps';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
+import { toPersianDigits } from '@/utils/persian-digits';
 
 export interface SavedBankEntry {
   value: string;
@@ -56,6 +57,15 @@ interface SarshooferContextValue {
     coords: Coordinates;
     verifiedAtTime: string;
   }>;
+  confirmBulkDriversArrival: (
+    tripWorkCalendarIds: string[],
+    note?: string
+  ) => Promise<{
+    successCount: number;
+    failureCount: number;
+    total: number;
+    errors: string[];
+  }>;
   submitLangiRequest: (payload: CreateLangiPayload) => Promise<{
     success: boolean;
     message: string;
@@ -67,7 +77,7 @@ const SarshooferContext = createContext<SarshooferContextValue | null>(null);
 
 export function SarshooferProvider({ children }: { children: React.ReactNode }) {
   const { token, isAuthenticated } = useAuth();
-  const { showSuccess, showError } = useToast();
+  const { showSuccess, showError, showToast } = useToast();
 
   const [drivers, setDrivers] = useState<TodayDriverItem[]>([]);
   const [dailyBoard, setDailyBoard] = useState<SupervisorDailyBoardResult | null>(null);
@@ -201,6 +211,103 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
     [token, showSuccess, showError]
   );
 
+  const confirmBulkDriversArrival = useCallback(
+    async (tripWorkCalendarIds: string[], note?: string) => {
+      if (!tripWorkCalendarIds || tripWorkCalendarIds.length === 0) {
+        return { successCount: 0, failureCount: 0, total: 0, errors: [] };
+      }
+
+      let coords: Coordinates;
+      try {
+        coords = await getCurrentCoordinates();
+        setLastCoordinates(coords);
+      } catch {
+        coords = { latitude: 0, longitude: 0 };
+      }
+
+      const verifiedAtTime = new Date().toLocaleTimeString('fa-IR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const effectiveNote =
+        note?.trim() || 'تأیید دسته‌جمعی حضور رانندگان توسط سرشوفر';
+
+      let successCount = 0;
+      let failureCount = 0;
+      const errors: string[] = [];
+      const successfulIds = new Set<string>();
+
+      for (const id of tripWorkCalendarIds) {
+        try {
+          await submitDriverArrivalVerificationApi(
+            id,
+            'arrived',
+            coords,
+            effectiveNote,
+            token
+          );
+          successCount++;
+          successfulIds.add(id);
+        } catch (err: any) {
+          failureCount++;
+          const errMsg = err?.message || 'خطا در ثبت حضور';
+          errors.push(errMsg);
+        }
+      }
+
+      // Strictly Pessimistic Update: only update local state for confirmed drivers
+      if (successfulIds.size > 0) {
+        setDrivers((prev) =>
+          prev.map((d) =>
+            successfulIds.has(d.tripWorkCalendarId)
+              ? {
+                  ...d,
+                  arrivalStatus: 'arrived',
+                  gpsStamp: {
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    verifiedAtTime,
+                    note: effectiveNote,
+                  },
+                }
+              : d
+          )
+        );
+      }
+
+      if (failureCount === 0) {
+        showSuccess(
+          `حضور تمام ${toPersianDigits(successCount)} راننده با موفقیت تأیید شد.`,
+          'تأیید دسته‌جمعی'
+        );
+      } else if (successCount > 0) {
+        showToast({
+          type: 'warning',
+          title: 'تأیید دسته‌جمعی با خطا',
+          message: `حضور ${toPersianDigits(
+            successCount
+          )} راننده ثبت شد، اما در ${toPersianDigits(
+            failureCount
+          )} مورد خطا رخ داد.`,
+        });
+      } else {
+        showError(
+          errors[0] || 'خطا در تأیید دسته‌جمعی رانندگان در سرور.',
+          'خطای تأیید دسته‌جمعی'
+        );
+      }
+
+      return {
+        successCount,
+        failureCount,
+        total: tripWorkCalendarIds.length,
+        errors,
+      };
+    },
+    [token, showSuccess, showToast, showError]
+  );
+
   const submitLangiRequest = useCallback(
     async (payload: CreateLangiPayload) => {
       try {
@@ -281,6 +388,7 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
       savedCards,
       refreshFleet,
       confirmDriverArrival,
+      confirmBulkDriversArrival,
       submitLangiRequest,
     }),
     [
@@ -298,6 +406,7 @@ export function SarshooferProvider({ children }: { children: React.ReactNode }) 
       savedCards,
       refreshFleet,
       confirmDriverArrival,
+      confirmBulkDriversArrival,
       submitLangiRequest,
     ]
   );

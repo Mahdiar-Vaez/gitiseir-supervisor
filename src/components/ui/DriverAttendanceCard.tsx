@@ -14,6 +14,9 @@ import {
   Phone,
   Repeat,
   ChevronLeft,
+  AlertTriangle,
+  CheckSquare,
+  Square,
 } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -23,6 +26,10 @@ import { toPersianDigits } from '@/utils/persian-digits';
 interface DriverAttendanceCardProps {
   item: TodayDriverItem;
   isProcessingGps?: boolean;
+  isExceptionHighlight?: boolean;
+  selectable?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (item: TodayDriverItem) => void;
   onPressArrivalAction: (item: TodayDriverItem, targetStatus: ArrivalStatus) => void;
   onPressLangiAction: (item: TodayDriverItem) => void;
 }
@@ -30,10 +37,19 @@ interface DriverAttendanceCardProps {
 export function DriverAttendanceCard({
   item,
   isProcessingGps = false,
+  isExceptionHighlight,
+  selectable = false,
+  isSelected = false,
+  onToggleSelect,
   onPressArrivalAction,
   onPressLangiAction,
 }: DriverAttendanceCardProps) {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
+
+  const isException =
+    isExceptionHighlight !== undefined
+      ? isExceptionHighlight
+      : item.arrivalStatus === 'not_arrived';
 
   const handleCallDriver = (phone: string) => {
     Linking.openURL(`tel:${phone}`).catch(() => {});
@@ -76,29 +92,74 @@ export function DriverAttendanceCard({
       style={[
         styles.card,
         {
-          backgroundColor: colors.card,
-          borderColor:
-            item.arrivalStatus === 'arrived'
-              ? 'rgba(16, 185, 129, 0.35)'
-              : item.arrivalStatus === 'not_arrived'
-              ? 'rgba(251, 113, 133, 0.38)'
-              : colors.border,
-          shadowColor: colors.shadow,
+          backgroundColor: isSelected
+            ? isDark
+              ? 'rgba(45, 212, 191, 0.08)'
+              : 'rgba(13, 148, 136, 0.05)'
+            : colors.card,
+          borderColor: isSelected
+            ? colors.command
+            : isException
+            ? '#EF4444'
+            : item.arrivalStatus === 'arrived'
+            ? 'rgba(16, 185, 129, 0.45)'
+            : colors.border,
+          shadowColor: isException ? '#EF4444' : colors.shadow,
         },
       ]}
     >
-      {/* 1. Header Row: Driver Name & Plate (Right) | Time, Status & Call (Left) */}
-      <View style={styles.headerRow}>
-        <View style={styles.driverInfoRight}>
+      {/* Exception Alert Banner (for not_arrived / issues) */}
+      {isException && (
+        <View
+          style={[
+            styles.exceptionBanner,
+            {
+              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+              borderColor: 'rgba(239, 68, 68, 0.4)',
+            },
+          ]}
+        >
+          <AlertTriangle size={13} color="#EF4444" />
           <Text
             numberOfLines={1}
             style={[
-              styles.driverName,
-              { color: colors.text, fontFamily: Typography.fontFamily.bold },
+              styles.exceptionBannerText,
+              { color: '#EF4444', fontFamily: Typography.fontFamily.bold },
             ]}
           >
-            {item.driverFullName}
+            عدم حضور راننده — اولویت پیگیری، تماس یا ثبت لنگی
           </Text>
+        </View>
+      )}
+
+      {/* 1. Header Row: Checkbox + Driver Name & Plate (Right) | Time, Status & Call (Left) */}
+      <View style={styles.headerRow}>
+        <View style={styles.driverInfoRight}>
+          <View style={styles.nameAndCheckRow}>
+            {selectable && (
+              <Pressable
+                onPress={() => onToggleSelect?.(item)}
+                style={styles.checkboxTouch}
+                hitSlop={8}
+                accessibilityLabel="انتخاب برای تأیید دسته‌جمعی"
+              >
+                {isSelected ? (
+                  <CheckSquare size={19} color={colors.command} />
+                ) : (
+                  <Square size={19} color={colors.textMuted} />
+                )}
+              </Pressable>
+            )}
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.driverName,
+                { color: colors.text, fontFamily: Typography.fontFamily.bold },
+              ]}
+            >
+              {item.driverFullName}
+            </Text>
+          </View>
           <Text
             numberOfLines={1}
             style={[
@@ -324,13 +385,28 @@ export function DriverAttendanceCard({
 const styles = StyleSheet.create({
   card: {
     borderRadius: BorderRadius.lg,
-    borderWidth: 1,
+    borderWidth: 1.5,
     padding: Spacing.md,
     gap: 8,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 5,
     elevation: 2,
+  },
+  exceptionBanner: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    marginBottom: 2,
+  },
+  exceptionBannerText: {
+    fontSize: 11,
+    textAlign: 'right',
+    flex: 1,
   },
   headerRow: {
     flexDirection: 'row-reverse',
@@ -342,6 +418,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'flex-end',
     gap: 2,
+  },
+  nameAndCheckRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+  },
+  checkboxTouch: {
+    padding: 2,
   },
   driverName: {
     fontSize: 15,
