@@ -7,6 +7,7 @@ import { resetVerificationAttempts } from '@/utils/security';
 export interface AuthContextType {
   token: string | null;
   user: AuthUser | null;
+  companyServiceId: number | null;
   isDriver: boolean;
   isAdmin: boolean;
   isLeadDriver: boolean;
@@ -21,11 +22,39 @@ export interface AuthContextType {
   logout: () => Promise<void>;
 }
 
+function extractCompanyServiceIdFromJwt(jwtToken?: string | null): number | null {
+  if (!jwtToken) return null;
+  try {
+    const parts = jwtToken.split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const globalBuffer = (globalThis as Record<string, any>).Buffer;
+    const decoded =
+      typeof atob === 'function'
+        ? atob(padded)
+        : globalBuffer
+        ? globalBuffer.from(padded, 'base64').toString('utf8')
+        : '';
+    if (!decoded) return null;
+    const payload = JSON.parse(decoded);
+    const raw =
+      payload?.CompanyServiceId ??
+      payload?.companyServiceId ??
+      payload?.CompanyServiceLocationId;
+    const num = Number(raw);
+    return !Number.isNaN(num) && num > 0 ? num : null;
+  } catch {
+    return null;
+  }
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [companyServiceId, setCompanyServiceId] = useState<number | null>(null);
   const [isDriver, setIsDriver] = useState<boolean>(false);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isLeadDriver, setIsLeadDriver] = useState<boolean>(true);
@@ -56,8 +85,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           const parsedUser = JSON.parse(savedUserJson) as AuthUser;
+          const resolvedServiceId =
+            (parsedUser?.companyServiceId && Number(parsedUser.companyServiceId) > 0
+              ? Number(parsedUser.companyServiceId)
+              : null) ?? extractCompanyServiceIdFromJwt(savedToken);
+
+          const enrichedUser: AuthUser = {
+            ...parsedUser,
+            companyServiceId: resolvedServiceId,
+          };
+
           setToken(savedToken);
-          setUser(parsedUser);
+          setUser(enrichedUser);
+          setCompanyServiceId(resolvedServiceId);
           setTokenExpireDate(savedExpire);
           setIsLeadDriver(true);
         }
@@ -99,16 +139,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('پاسخ نامعتبر از سرور دریافت شد.');
         }
 
+        const resolvedServiceId =
+          (result.companyServiceId && Number(result.companyServiceId) > 0
+            ? Number(result.companyServiceId)
+            : null) ??
+          (result.user?.companyServiceId && Number(result.user.companyServiceId) > 0
+            ? Number(result.user.companyServiceId)
+            : null) ??
+          extractCompanyServiceIdFromJwt(result.token);
+
+        const enrichedUser: AuthUser = {
+          ...result.user,
+          companyServiceId: resolvedServiceId,
+        };
+
         await Promise.all([
           secureStorage.setItem(STORAGE_KEYS.TOKEN, result.token),
-          secureStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(result.user)),
+          secureStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(enrichedUser)),
           secureStorage.setItem(STORAGE_KEYS.EXPIRE, result.tokenExpireDate || ''),
         ]);
 
         resetVerificationAttempts(mobile);
 
         setToken(result.token);
-        setUser(result.user);
+        setUser(enrichedUser);
+        setCompanyServiceId(resolvedServiceId);
         setIsDriver(Boolean(result.isDriver));
         setIsAdmin(Boolean(result.isAdmin));
         setIsLeadDriver(true);
@@ -117,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return {
           success: true,
           message: 'ورود به سامانه سرشوفر با موفقیت انجام شد.',
-          user: result.user,
+          user: enrichedUser,
         };
       } catch (error: any) {
         return {
@@ -141,6 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setToken(null);
       setUser(null);
+      setCompanyServiceId(null);
       setIsDriver(false);
       setIsAdmin(false);
       setIsLeadDriver(false);
@@ -151,6 +207,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value: AuthContextType = {
     token,
     user,
+    companyServiceId,
     isDriver,
     isAdmin,
     isLeadDriver,

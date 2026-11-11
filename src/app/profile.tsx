@@ -13,10 +13,6 @@ import {
   Phone,
   CreditCard,
   LogOut,
-  Navigation,
-  Repeat,
-  CheckCircle2,
-  Radio,
 } from 'lucide-react-native';
 
 import { useAppTheme } from '@/context/ThemeContext';
@@ -24,12 +20,13 @@ import { useAuth } from '@/context/AuthContext';
 import { useSarshoofer } from '@/context/SarshooferContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { AppHeader } from '@/components/ui/AppHeader';
+import { SupervisorTodaySummaryCard } from '@/components/ui/SupervisorTodaySummaryCard';
 import { toPersianDigits } from '@/utils/persian-digits';
 
 export default function SarshooferProfileScreen() {
   const { colors, isDark } = useAppTheme();
   const { user, logout } = useAuth();
-  const { stats } = useSarshoofer();
+  const { todayExecutionSummary, refreshTodaySummary, refreshing } = useSarshoofer();
 
   const [showLogoutModal, setShowLogoutModal] = useState<boolean>(false);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
@@ -80,24 +77,7 @@ export default function SarshooferProfileScreen() {
                   { color: colors.gold, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                کارت شناسایی سرشوفر ارشد گیتی‌سیر
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.activeRoleBadge,
-                { backgroundColor: colors.commandBg, borderColor: colors.command },
-              ]}
-            >
-              <Radio size={11} color={colors.command} />
-              <Text
-                style={[
-                  styles.activeRoleText,
-                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                فرماندهی فعال
+                کارت شناسایی سرشوفر گیتی‌سیر
               </Text>
             </View>
           </View>
@@ -133,19 +113,11 @@ export default function SarshooferProfileScreen() {
               </Text>
               <Text
                 style={[
-                  styles.idRoleDesc,
-                  { color: colors.command, fontFamily: Typography.fontFamily.medium },
-                ]}
-              >
-                سرشوفر ناظر خطوط بهمن موتور، کروز و سایپا پرس
-              </Text>
-              <Text
-                style={[
                   styles.idPersonnelCode,
                   { color: colors.textSecondary, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                کد سازمانی سرشوفر: {personnelCode} • اعتبار: ۱۴۰۶/۱۲/۲۹
+                کد سازمانی سرشوفر: {personnelCode}
               </Text>
             </View>
           </View>
@@ -201,95 +173,12 @@ export default function SarshooferProfileScreen() {
           </View>
         </View>
 
-        {/* 2. Supervision Metrics Today */}
-        <View style={styles.sectionHeader}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              { color: colors.text, fontFamily: Typography.fontFamily.bold },
-            ]}
-          >
-            شاخص‌های عملکرد نظارتی امروز
-          </Text>
-          <View style={[styles.accentBar, { backgroundColor: colors.command }]} />
-        </View>
-
-        <View style={styles.statsGrid}>
-          <View
-            style={[
-              styles.statBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <CheckCircle2 size={20} color={colors.success} />
-            <Text
-              style={[
-                styles.statValue,
-                { color: colors.text, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              {toPersianDigits(stats.arrivedCount + stats.notArrivedCount)}
-            </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
-              ]}
-            >
-              ثبت حضور با GPS
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.statBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Repeat size={20} color={colors.langi} />
-            <Text
-              style={[
-                styles.statValue,
-                { color: colors.text, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              {toPersianDigits(stats.langiCount)}
-            </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
-              ]}
-            >
-              لنگی‌های فعال امروز
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.statBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Navigation size={20} color={colors.command} />
-            <Text
-              style={[
-                styles.statValue,
-                { color: colors.text, fontFamily: Typography.fontFamily.bold },
-              ]}
-            >
-              ۱۰۰٪
-            </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
-              ]}
-            >
-              دقت موقعیت‌یابی
-            </Text>
-          </View>
-        </View>
+        {/* 2. Supervision Metrics Today - Live /today-execution-summary */}
+        <SupervisorTodaySummaryCard
+          summary={todayExecutionSummary}
+          loading={refreshing}
+          onRefresh={refreshTodaySummary}
+        />
 
         {/* 3. Logout Button */}
         <TouchableOpacity
@@ -500,40 +389,6 @@ const styles = StyleSheet.create({
   },
   idFooterVal: {
     fontSize: 12.5,
-  },
-  sectionHeader: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-  },
-  accentBar: {
-    width: 3.5,
-    height: 16,
-    borderRadius: 2,
-  },
-  sectionTitle: {
-    fontSize: 14.5,
-  },
-  statsGrid: {
-    flexDirection: 'row-reverse',
-    gap: 8,
-  },
-  statBox: {
-    flex: 1,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    gap: 6,
-  },
-  statValue: {
-    fontSize: 18,
-  },
-  statLabel: {
-    fontSize: 10.5,
-    textAlign: 'center',
   },
   logoutBtn: {
     height: 48,

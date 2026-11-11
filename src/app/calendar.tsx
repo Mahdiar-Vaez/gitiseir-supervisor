@@ -6,7 +6,6 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
-  TouchableOpacity,
 } from 'react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -18,11 +17,9 @@ import { AppHeader } from '@/components/ui/AppHeader';
 import { ShamsiCalendar } from '@/components/ui/ShamsiCalendar';
 import { DayTripsTable } from '@/components/ui/DayTripsTable';
 import { TripSummaryModal } from '@/components/ui/TripSummaryModal';
-import { ConfirmAttendanceModal } from '@/components/ui/ConfirmAttendanceModal';
-import { AssignTempDriverModal } from '@/components/ui/AssignTempDriverModal';
 import { WorkCalendarDay, DayTripGridItem } from '@/services/api/types';
 import { getWorkCalendarApi, getDayTripsGridApi } from '@/services/api/calendar';
-import { CalendarDays, Inbox, UserCheck, UserPlus } from 'lucide-react-native';
+import { Inbox } from 'lucide-react-native';
 
 export default function CalendarScreen() {
   const { colors, isDark } = useAppTheme();
@@ -46,13 +43,6 @@ export default function CalendarScreen() {
   // 3. Modal state
   const [selectedGridTrip, setSelectedGridTrip] = useState<DayTripGridItem | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
-
-  // Supervisor / Calendar Day Action Modals
-  const [attendanceModalOpen, setAttendanceModalOpen] = useState<boolean>(false);
-  const [attendanceTrip, setAttendanceTrip] = useState<DayTripGridItem | null>(null);
-
-  const [tempDriverModalOpen, setTempDriverModalOpen] = useState<boolean>(false);
-  const [tempDriverTrip, setTempDriverTrip] = useState<DayTripGridItem | null>(null);
 
   // Load monthly calendar days
   useEffect(() => {
@@ -180,111 +170,7 @@ export default function CalendarScreen() {
           isLoading={loadingCalendar}
         />
 
-        {/* 2. Selected Day Assignment & Supervisor Actions Card (اختصاص سفر به روز انتخاب شده) */}
-        <View
-          style={[
-            styles.dayAssignmentCard,
-            {
-              backgroundColor: isDark ? '#111827' : '#FFFFFF',
-              borderColor: colors.borderGold,
-            },
-          ]}
-        >
-          <View style={styles.dayAssignmentHeader}>
-            <View
-              style={[
-                styles.dayBadge,
-                { backgroundColor: colors.goldBg, borderColor: colors.gold },
-              ]}
-            >
-              <CalendarDays size={13} color={colors.gold} />
-              <Text
-                style={[
-                  styles.dayBadgeText,
-                  { color: colors.gold, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                {selectedDateLabel}
-              </Text>
-            </View>
-
-            <View style={styles.sectionTitleRow}>
-              <View style={styles.titleColumn}>
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    { color: colors.text, fontFamily: Typography.fontFamily.bold },
-                  ]}
-                >
-                  اختصاص سفر به روز {selectedDateLabel}
-                </Text>
-                <Text
-                  style={[
-                    styles.sectionSubtitle,
-                    { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
-                  ]}
-                >
-                  ثبت حضور، سفر جامانده و تعیین راننده موقت (لنگی) در تقویم کاری
-                </Text>
-              </View>
-              <View style={[styles.goldAccentBar, { backgroundColor: colors.gold }]} />
-            </View>
-          </View>
-
-          <View style={styles.dayActionBtnsRow}>
-            <TouchableOpacity
-              onPress={() => {
-                setAttendanceTrip(dayTrips.length > 0 ? dayTrips[0] : null);
-                setAttendanceModalOpen(true);
-              }}
-              activeOpacity={0.85}
-              style={[
-                styles.dayActionBtn,
-                {
-                  backgroundColor: 'rgba(16, 185, 129, 0.14)',
-                  borderColor: '#10B981',
-                },
-              ]}
-            >
-              <UserCheck size={15} color="#10B981" />
-              <Text
-                style={[
-                  styles.dayActionBtnText,
-                  { color: '#10B981', fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                ثبت حضور در روز {toPersianDigits(selectedDay)} {currentMonthName}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => {
-                setTempDriverTrip(dayTrips.length > 0 ? dayTrips[0] : null);
-                setTempDriverModalOpen(true);
-              }}
-              activeOpacity={0.85}
-              style={[
-                styles.dayActionBtn,
-                {
-                  backgroundColor: 'rgba(245, 158, 11, 0.14)',
-                  borderColor: '#F59E0B',
-                },
-              ]}
-            >
-              <UserPlus size={15} color="#F59E0B" />
-              <Text
-                style={[
-                  styles.dayActionBtnText,
-                  { color: '#F59E0B', fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                تعیین راننده موقت (لنگی)
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 3. Selected Day Trips Section Header */}
+        {/* 2. Selected Day Trips Section Header */}
         <View style={styles.sectionHeader}>
           <Text
             style={[
@@ -302,7 +188,7 @@ export default function CalendarScreen() {
                 { color: colors.text, fontFamily: Typography.fontFamily.bold },
               ]}
             >
-              لیست سفرهای روز {selectedDateLabel}
+              سفرهای فعال تاریخ {selectedDateLabel} در تقویم کاری
             </Text>
             <View style={[styles.goldAccentBar, { backgroundColor: colors.gold }]} />
           </View>
@@ -325,15 +211,7 @@ export default function CalendarScreen() {
           <DayTripsTable
             trips={dayTrips}
             onSelectTrip={handleSelectTripFromTable}
-            showSupervisorActions={true}
-            onConfirmAttendance={(trip) => {
-              setAttendanceTrip(trip);
-              setAttendanceModalOpen(true);
-            }}
-            onAssignTempDriver={(trip) => {
-              setTempDriverTrip(trip);
-              setTempDriverModalOpen(true);
-            }}
+            showSupervisorActions={false}
           />
         ) : (
           /* Real Empty State (Zero Mock Data) */
@@ -408,51 +286,6 @@ export default function CalendarScreen() {
         calendarDayId={selectedGridTrip?.tripWorkCalendarId || ''}
         onClose={handleCloseModal}
       />
-
-      {/* 6. Confirm Attendance Modal */}
-      <ConfirmAttendanceModal
-        visible={attendanceModalOpen}
-        calendarDayId={attendanceTrip?.tripWorkCalendarId ?? null}
-        tripId={attendanceTrip?.tripId}
-        tripName={attendanceTrip?.tripName}
-        driverName={attendanceTrip?.driverFullName}
-        tripTime={
-          attendanceTrip?.outbound?.start
-            ? `${attendanceTrip.outbound.start.slice(0, 5)} تا ${
-                attendanceTrip.outbound.end?.slice(0, 5) || ''
-              }`
-            : undefined
-        }
-        selectedDateLabel={selectedDateLabel}
-        dayTrips={dayTrips}
-        onClose={() => {
-          setAttendanceModalOpen(false);
-          setAttendanceTrip(null);
-        }}
-        onSuccess={() => setRefreshIndex((prev) => prev + 1)}
-      />
-
-      {/* 7. Assign Temporary Driver Modal */}
-      <AssignTempDriverModal
-        visible={tempDriverModalOpen}
-        calendarDayId={tempDriverTrip?.tripWorkCalendarId ?? null}
-        tripId={tempDriverTrip?.tripId}
-        tripName={tempDriverTrip?.tripName}
-        mainDriverName={tempDriverTrip?.driverFullName}
-        defaultPrice={
-          tempDriverTrip?.outbound?.price ??
-          tempDriverTrip?.inbound?.price ??
-          null
-        }
-        existingTempDriver={tempDriverTrip?.temporaryDriver}
-        selectedDateLabel={selectedDateLabel}
-        dayTrips={dayTrips}
-        onClose={() => {
-          setTempDriverModalOpen(false);
-          setTempDriverTrip(null);
-        }}
-        onSuccess={() => setRefreshIndex((prev) => prev + 1)}
-      />
     </View>
   );
 }
@@ -465,37 +298,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
     gap: Spacing.md,
-  },
-  dayAssignmentCard: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1.5,
-    padding: Spacing.md,
-    gap: 12,
-  },
-  dayAssignmentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  dayActionBtnsRow: {
-    flexDirection: 'row-reverse',
-    gap: 8,
-  },
-  dayActionBtn: {
-    flex: 1,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-  },
-  dayActionBtnText: {
-    fontSize: 11.5,
-    textAlign: 'center',
   },
   sectionHeader: {
     flexDirection: 'row',

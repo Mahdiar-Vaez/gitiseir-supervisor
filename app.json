@@ -2,23 +2,28 @@
   "expo": {
     "name": "گیتی‌سیر • سرشوفر",
     "slug": "gitiseir-supervisor",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "gitiseirsupervisor",
+    "scheme": "gitiseirsarshoofer",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#071318",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.mahdiar.vaez.gitiseirsupervisor"
+      "package": "com.mahdiar.vaez.gitiseirsarshoofer",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "usesCleartextTraffic": true
     },
     "web": {
       "output": "static",
@@ -29,12 +34,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#071318",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 120
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withCleartextTraffic.js"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -47,7 +53,7 @@
         }
       },
       "eas": {
-        "projectId": "3b656b2c-0e8e-435d-a020-a657da000e39"
+        "projectId": "34d7a669-d946-431c-988d-d579561c94cb"
       }
     }
   }

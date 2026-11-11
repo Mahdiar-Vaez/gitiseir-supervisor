@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Pressable,
+  Platform,
 } from 'react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -54,6 +55,13 @@ export function DayTripsTable({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
 
+  const horizontalScrollRef = useRef<any>(null);
+  const scrolledToRTL = useRef<boolean>(false);
+
+  const scrollToRightEdge = () => {
+    horizontalScrollRef.current?.scrollToEnd({ animated: false });
+  };
+
   const filteredTrips = useMemo(() => {
     const q = toEnglishDigits(searchQuery).trim().toLowerCase();
 
@@ -84,6 +92,13 @@ export function DayTripsTable({
       return searchableFields.includes(q);
     });
   }, [trips, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollToRightEdge();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [filteredTrips.length]);
 
   const filterOptions: { key: FilterStatus; label: string; count: number }[] = [
     { key: 'all', label: 'همه', count: trips.length },
@@ -231,11 +246,21 @@ export function DayTripsTable({
         </View>
       </View>
 
-      {/* Horizontal Scrollable Data-Grid Table */}
+      {/* Horizontal Scrollable Data-Grid Table (Strictly RTL: scroll from right to left) */}
       <ScrollView
+        ref={horizontalScrollRef}
         horizontal
         showsHorizontalScrollIndicator={true}
-        contentContainerStyle={styles.horizontalScrollContent}
+        contentContainerStyle={[
+          styles.horizontalScrollContent,
+          Platform.OS === 'web' ? ({ direction: 'rtl' } as any) : null,
+        ]}
+        onContentSizeChange={() => {
+          if (!scrolledToRTL.current) {
+            scrollToRightEdge();
+            scrolledToRTL.current = true;
+          }
+        }}
       >
         <View style={styles.tableContainer}>
           {/* Table Header Row (RTL: row-reverse) */}
@@ -755,6 +780,7 @@ const styles = StyleSheet.create({
   },
   horizontalScrollContent: {
     flexGrow: 1,
+    flexDirection: 'row-reverse',
   },
   tableContainer: {
     minWidth: '100%',

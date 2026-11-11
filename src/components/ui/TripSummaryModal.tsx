@@ -118,7 +118,7 @@ export function TripSummaryModal({
       getTripSummaryApi(tripId, token)
         .then((res) => {
           if (!isCancelled) {
-            if (res && res.result && typeof res.result === 'object' && 'id' in res.result) {
+            if (res && res.result && typeof res.result === 'object') {
               setSummary(res.result);
             } else {
               setSummary(null);
@@ -236,9 +236,19 @@ export function TripSummaryModal({
     ? Math.max(0, totalStations - visitedStations)
     : totalStations;
 
-  const nextStation = isInProgress
-    ? summary?.nextStation ||
-      (initialTrip && 'nextStation' in initialTrip ? initialTrip.nextStation : null)
+  const rawNextStation =
+    summary?.nextStation ||
+    (initialTrip && 'nextStation' in initialTrip ? initialTrip.nextStation : null);
+
+  const nextStationObj =
+    typeof rawNextStation === 'object' && rawNextStation !== null
+      ? (rawNextStation as any)
+      : null;
+
+  const nextStationTitle = nextStationObj
+    ? nextStationObj.title
+    : typeof rawNextStation === 'string'
+    ? rawNextStation
     : null;
 
   // Passenger counts (Real data only)
@@ -484,7 +494,7 @@ export function TripSummaryModal({
                   </View>
                 </View>
 
-                {nextStation ? (
+                {nextStationTitle ? (
                   <View style={styles.nextStationRow}>
                     <MapPin size={13} color={colors.gold} style={{ marginLeft: 4 }} />
                     <Text
@@ -494,7 +504,10 @@ export function TripSummaryModal({
                         { color: colors.textSecondary, fontFamily: Typography.fontFamily.medium },
                       ]}
                     >
-                      ایستگاه بعدی: {nextStation}
+                      ایستگاه بعدی: {nextStationTitle}
+                      {nextStationObj?.estimatedArrivalTime
+                        ? ` (ساعت ${toPersianDigits(nextStationObj.estimatedArrivalTime.slice(0, 5))})`
+                        : ''}
                     </Text>
                   </View>
                 ) : null}

@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   Modal,
 } from 'react-native';
-import { router } from 'expo-router';
 import {
   Search,
   X,
@@ -19,6 +18,7 @@ import {
   MapPin,
   ArrowDownLeft,
   ArrowUpRight,
+  Clock,
   RefreshCw,
   AlertTriangle,
   CheckCircle2,
@@ -37,7 +37,6 @@ import { ArrivalConfirmModal } from '@/components/ui/ArrivalConfirmModal';
 import { LangiRequestModal } from '@/components/ui/LangiRequestModal';
 
 type MainTabType = 'exceptions' | 'completed';
-type ExceptionSubFilter = 'all' | 'not_arrived' | 'pending' | 'langi';
 
 export default function TodayDriversScreen() {
   const { colors, isDark } = useAppTheme();
@@ -59,8 +58,6 @@ export default function TodayDriversScreen() {
 
   // Primary Two-Tab View (Exceptions First vs Completed)
   const [mainTab, setMainTab] = useState<MainTabType>('exceptions');
-  const [exceptionSubFilter, setExceptionSubFilter] =
-    useState<ExceptionSubFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [locationInput, setLocationInput] = useState<string>(
     String(companyServiceLocationId)
@@ -86,26 +83,29 @@ export default function TodayDriversScreen() {
   const [selectedDriverForLangi, setSelectedDriverForLangi] =
     useState<TodayDriverItem | null>(null);
 
-  // 1. Pending drivers eligible for Bulk Approval
+  // 1. Pending drivers eligible for 1-click Bulk Approval
   const eligiblePendingDrivers = useMemo(() => {
-    return drivers.filter((item) => item.arrivalStatus === 'pending');
+    return drivers.filter(
+      (item) =>
+        !item.isConfirmedBySupervisor && item.arrivalStatus === 'pending'
+    );
   }, [drivers]);
 
-  // Target IDs for Bulk Approval (if no explicit subset is selected, default to all pending)
+  // Target IDs for Bulk Approval (if none explicitly checked, default to all pending)
   const targetBulkIds = useMemo(() => {
-    if (selectedIdsForBulk.size > 0) {
-      return Array.from(selectedIdsForBulk);
+    const validSelected = Array.from(selectedIdsForBulk).filter((id) =>
+      eligiblePendingDrivers.some((d) => d.tripWorkCalendarId === id)
+    );
+    if (validSelected.length > 0) {
+      return validSelected;
     }
     return eligiblePendingDrivers.map((d) => d.tripWorkCalendarId);
   }, [selectedIdsForBulk, eligiblePendingDrivers]);
 
   const allPendingSelected = useMemo(() => {
     if (eligiblePendingDrivers.length === 0) return false;
-    return (
-      selectedIdsForBulk.size === eligiblePendingDrivers.length &&
-      eligiblePendingDrivers.every((d) =>
-        selectedIdsForBulk.has(d.tripWorkCalendarId)
-      )
+    return eligiblePendingDrivers.every((d) =>
+      selectedIdsForBulk.has(d.tripWorkCalendarId)
     );
   }, [selectedIdsForBulk, eligiblePendingDrivers]);
 
@@ -131,17 +131,23 @@ export default function TodayDriversScreen() {
     });
   };
 
-  // 2. Exception Drivers (Tab 1) - Sorted Exceptions First (not_arrived at top in red!)
-  const exceptionsDrivers = useMemo(() => {
-    let list = drivers.filter((d) => d.arrivalStatus !== 'arrived');
+  // Helper: A driver is "cleanly confirmed (green)" ONLY if confirmed, arrived, not absent, and NOT delayed
+  const isCleanGreenConfirmed = (d: TodayDriverItem) =>
+    Boolean(
+      d.isConfirmedBySupervisor &&
+        d.arrivalStatus === 'arrived' &&
+        d.executionStatus !== 4 &&
+        !d.isDelayed &&
+        !(d.delayMinutes && d.delayMinutes > 0)
+    );
 
-    if (exceptionSubFilter === 'not_arrived') {
-      list = list.filter((d) => d.arrivalStatus === 'not_arrived');
-    } else if (exceptionSubFilter === 'pending') {
-      list = list.filter((d) => d.arrivalStatus === 'pending');
-    } else if (exceptionSubFilter === 'langi') {
-      list = list.filter((d) => d.hasLangi);
-    }
+  // 2. Tab 1: Everything EXCEPT cleanly confirmed green drivers:
+  //    1st: Absent (Red) at the very top
+  //    2nd: Delayed drivers (after Red)
+  //    3rd: Langi drivers
+  //    4th: Pending drivers
+  const exceptionsDrivers = useMemo(() => {
+    let list = drivers.filter((d) => !isCleanGreenConfirmed(d));
 
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
@@ -156,21 +162,26 @@ export default function TodayDriversScreen() {
       });
     }
 
-    // Crucial Sort Rule: not_arrived drivers first, then langi, then time
     return [...list].sort((a, b) => {
-      if (a.arrivalStatus === 'not_arrived' && b.arrivalStatus !== 'not_arrived')
-        return -1;
-      if (b.arrivalStatus === 'not_arrived' && a.arrivalStatus !== 'not_arrived')
-        return 1;
+      const aAbsent = a.arrivalStatus === 'not_arrived' || a.executionStatus === 4;
+      const bAbsent = b.arrivalStatus === 'not_arrived' || b.executionStatus === 4;
+      if (aAbsent && !bAbsent) return -1;
+      if (bAbsent && !aAbsent) return 1;
+
+      const aDelayed = Boolean(a.isDelayed || (a.delayMinutes && a.delayMinutes > 0));
+      const bDelayed = Boolean(b.isDelayed || (b.delayMinutes && b.delayMinutes > 0));
+      if (aDelayed && !bDelayed) return -1;
+      if (bDelayed && !aDelayed) return 1;
+
       if (a.hasLangi && !b.hasLangi) return -1;
       if (b.hasLangi && !a.hasLangi) return 1;
       return a.scheduledStartTime.localeCompare(b.scheduledStartTime);
     });
-  }, [drivers, exceptionSubFilter, searchQuery]);
+  }, [drivers, searchQuery]);
 
-  // 3. Completed Drivers (Tab 2)
+  // 3. Tab 2: ONLY cleanly confirmed & completed drivers (Green border, no delay, no absence)
   const completedDrivers = useMemo(() => {
-    let list = drivers.filter((d) => d.arrivalStatus === 'arrived');
+    let list = drivers.filter((d) => isCleanGreenConfirmed(d));
 
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
@@ -187,7 +198,14 @@ export default function TodayDriversScreen() {
     );
   }, [drivers, searchQuery]);
 
-  const exceptionsTotalCount = stats.notArrivedCount + stats.pendingCount;
+  const exceptionsTotalCount = useMemo(
+    () => drivers.filter((d) => !isCleanGreenConfirmed(d)).length,
+    [drivers]
+  );
+  const cleanCompletedCount = useMemo(
+    () => drivers.filter((d) => isCleanGreenConfirmed(d)).length,
+    [drivers]
+  );
 
   const handleApplyLocationId = () => {
     const parsed = Number(toEnglishDigits(locationInput).replace(/\D/g, ''));
@@ -209,17 +227,26 @@ export default function TodayDriversScreen() {
     tripWorkCalendarId: string,
     status: ArrivalStatus,
     note: string,
-    openLangiAfter: boolean
+    openLangiAfter: boolean,
+    isDelayed?: boolean,
+    delayMinutes?: number
   ) => {
     const targetDriver = selectedDriverForArrival;
     setProcessingId(tripWorkCalendarId);
     try {
-      await confirmDriverArrival(tripWorkCalendarId, status, note);
+      await confirmDriverArrival(
+        tripWorkCalendarId,
+        status,
+        note,
+        isDelayed,
+        delayMinutes
+      );
       setConfirmModalVisible(false);
 
       if (openLangiAfter && targetDriver) {
         setTimeout(() => {
-          router.navigate('/calendar' as any);
+          setSelectedDriverForLangi(targetDriver);
+          setLangiModalVisible(true);
         }, 220);
       }
     } finally {
@@ -228,12 +255,8 @@ export default function TodayDriversScreen() {
   };
 
   const handleOpenLangiModal = (driverItem?: TodayDriverItem) => {
-    if (driverItem && driverItem.hasLangi) {
-      setSelectedDriverForLangi(driverItem);
-      setLangiModalVisible(true);
-    } else {
-      router.navigate('/calendar' as any);
-    }
+    setSelectedDriverForLangi(driverItem || drivers[0] || null);
+    setLangiModalVisible(true);
   };
 
   // One-Click Bulk Approval Action (Strictly Pessimistic)
@@ -266,7 +289,7 @@ export default function TodayDriversScreen() {
           />
         }
       >
-        {/* 0. Daily Board Location & Direction Card */}
+        {/* 0. Compact Daily Board Location & Direction Card (Zero Overflow) */}
         <View
           style={[
             styles.dailyBoardFilterCard,
@@ -276,65 +299,33 @@ export default function TodayDriversScreen() {
             },
           ]}
         >
-          <View style={styles.dailyBoardHeaderRow}>
-            <View style={styles.directionToggleGroup}>
-              <TouchableOpacity
-                onPress={() => setEntering(true)}
+          {/* Row 1: Right-aligned Title & Left-aligned Location Summary */}
+          <View style={styles.dailyBoardTitleBar}>
+            <View
+              style={[
+                styles.boardModeBadge,
+                {
+                  backgroundColor: isDark ? '#071318' : '#F0FDFA',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                numberOfLines={1}
                 style={[
-                  styles.dirBtn,
+                  styles.boardModeBadgeText,
                   {
-                    backgroundColor: entering ? colors.command : 'transparent',
-                    borderColor: entering ? colors.command : colors.border,
+                    color: colors.command,
+                    fontFamily: Typography.fontFamily.bold,
                   },
                 ]}
               >
-                <ArrowDownLeft
-                  size={13}
-                  color={entering ? '#071318' : colors.textSecondary}
-                />
-                <Text
-                  style={[
-                    styles.dirBtnText,
-                    {
-                      color: entering ? '#071318' : colors.textSecondary,
-                      fontFamily: entering
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  سرویس‌های ورودی
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setEntering(false)}
-                style={[
-                  styles.dirBtn,
-                  {
-                    backgroundColor: !entering ? colors.gold : 'transparent',
-                    borderColor: !entering ? colors.gold : colors.border,
-                  },
-                ]}
-              >
-                <ArrowUpRight
-                  size={13}
-                  color={!entering ? '#071318' : colors.textSecondary}
-                />
-                <Text
-                  style={[
-                    styles.dirBtnText,
-                    {
-                      color: !entering ? '#071318' : colors.textSecondary,
-                      fontFamily: !entering
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  سرویس‌های خروجی
-                </Text>
-              </TouchableOpacity>
+                {dailyBoard
+                  ? `${dailyBoard.companyServiceLocationTitle} • ${toPersianDigits(
+                      dailyBoard.totalCount
+                    )} سرویس`
+                  : `کد محل خدمت: ${toPersianDigits(companyServiceLocationId)}`}
+              </Text>
             </View>
 
             <View style={styles.boardTitleGroup}>
@@ -350,7 +341,110 @@ export default function TodayDriversScreen() {
             </View>
           </View>
 
-          {/* Service Location Selector */}
+          {/* Row 2: Direction Toggle Group (Automatic / Incoming / Outgoing) */}
+          <View style={styles.directionToggleGroup}>
+            <TouchableOpacity
+              onPress={() => setEntering(undefined)}
+              style={[
+                styles.dirBtn,
+                {
+                  backgroundColor:
+                    entering === undefined ? colors.command : 'transparent',
+                  borderColor:
+                    entering === undefined ? colors.command : colors.border,
+                },
+              ]}
+            >
+              <Clock
+                size={12}
+                color={entering === undefined ? '#071318' : colors.textSecondary}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.dirBtnText,
+                  {
+                    color:
+                      entering === undefined ? '#071318' : colors.textSecondary,
+                    fontFamily:
+                      entering === undefined
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                خودکار
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setEntering(true)}
+              style={[
+                styles.dirBtn,
+                {
+                  backgroundColor:
+                    entering === true ? colors.command : 'transparent',
+                  borderColor:
+                    entering === true ? colors.command : colors.border,
+                },
+              ]}
+            >
+              <ArrowDownLeft
+                size={12}
+                color={entering === true ? '#071318' : colors.textSecondary}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.dirBtnText,
+                  {
+                    color: entering === true ? '#071318' : colors.textSecondary,
+                    fontFamily:
+                      entering === true
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                ورودی
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setEntering(false)}
+              style={[
+                styles.dirBtn,
+                {
+                  backgroundColor:
+                    entering === false ? colors.gold : 'transparent',
+                  borderColor:
+                    entering === false ? colors.gold : colors.border,
+                },
+              ]}
+            >
+              <ArrowUpRight
+                size={12}
+                color={entering === false ? '#071318' : colors.textSecondary}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.dirBtnText,
+                  {
+                    color: entering === false ? '#071318' : colors.textSecondary,
+                    fontFamily:
+                      entering === false
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.regular,
+                  },
+                ]}
+              >
+                خروجی
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Row 3: Service Location Chips */}
           {serviceLocations.length > 0 ? (
             <ScrollView
               horizontal
@@ -397,6 +491,7 @@ export default function TodayDriversScreen() {
             </ScrollView>
           ) : null}
 
+          {/* Row 4: Manual Location ID Input & Query Button */}
           <View style={styles.locationInputRow}>
             <TouchableOpacity
               onPress={handleApplyLocationId}
@@ -405,7 +500,7 @@ export default function TodayDriversScreen() {
                 { backgroundColor: colors.command },
               ]}
             >
-              <RefreshCw size={13} color="#071318" />
+              <RefreshCw size={12} color="#071318" />
               <Text
                 style={[
                   styles.applyLocBtnText,
@@ -417,11 +512,13 @@ export default function TodayDriversScreen() {
             </TouchableOpacity>
 
             <TextInput
-              value={locationInput}
-              onChangeText={setLocationInput}
+              value={toPersianDigits(locationInput)}
+              onChangeText={(txt) =>
+                setLocationInput(toEnglishDigits(txt).replace(/\D/g, ''))
+              }
               onSubmitEditing={handleApplyLocationId}
               keyboardType="numeric"
-              placeholder="کد محل خدمت (مثال: 18)"
+              placeholder="کد محل خدمت"
               placeholderTextColor={colors.textMuted}
               style={[
                 styles.locIdInput,
@@ -446,47 +543,13 @@ export default function TodayDriversScreen() {
               کد محل خدمت:
             </Text>
           </View>
-
-          {dailyBoard ? (
-            <View
-              style={[
-                styles.boardSummaryBar,
-                {
-                  backgroundColor: isDark ? '#071318' : '#F0FDFA',
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.boardSummaryText,
-                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                {dailyBoard.companyServiceLocationTitle} ({dailyBoard.directionTitle})
-              </Text>
-              <Text
-                style={[
-                  styles.boardCountsText,
-                  {
-                    color: colors.textSecondary,
-                    fontFamily: Typography.fontFamily.regular,
-                  },
-                ]}
-              >
-                کل: {toPersianDigits(dailyBoard.totalCount)} | زمان‌بندی:{' '}
-                {toPersianDigits(dailyBoard.scheduledCount)} | در جریان:{' '}
-                {toPersianDigits(dailyBoard.startedCount)} | تکمیل:{' '}
-                {toPersianDigits(dailyBoard.completedCount)}
-              </Text>
-            </View>
-          ) : null}
         </View>
 
         {/* 1. Primary Two Tabs Navigation (Exceptions First vs Completed) */}
         <View style={styles.mainTabsContainer}>
           <TouchableOpacity
             onPress={() => setMainTab('exceptions')}
+            activeOpacity={0.85}
             style={[
               styles.mainTabBtn,
               {
@@ -503,45 +566,49 @@ export default function TodayDriversScreen() {
               },
             ]}
           >
-            <View style={styles.tabBadgeRow}>
-              {exceptionsTotalCount > 0 ? (
-                <View
-                  style={[
-                    styles.tabBadge,
-                    {
-                      backgroundColor:
-                        stats.notArrivedCount > 0 ? '#EF4444' : colors.gold,
-                    },
-                  ]}
-                >
-                  <Text style={styles.tabBadgeText}>
-                    {toPersianDigits(exceptionsTotalCount)}
-                  </Text>
-                </View>
-              ) : null}
+            <View style={styles.tabInnerRow}>
               <AlertTriangle
-                size={16}
+                size={15}
                 color={mainTab === 'exceptions' ? '#EF4444' : colors.textMuted}
               />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.mainTabText,
+                  {
+                    color: mainTab === 'exceptions' ? '#EF4444' : colors.textMuted,
+                    fontFamily:
+                      mainTab === 'exceptions'
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.medium,
+                  },
+                ]}
+              >
+                نیازمند بررسی
+              </Text>
+              <View
+                style={[
+                  styles.tabBadge,
+                  {
+                    backgroundColor:
+                      stats.notArrivedCount > 0
+                        ? '#EF4444'
+                        : exceptionsTotalCount > 0
+                        ? colors.gold
+                        : colors.border,
+                  },
+                ]}
+              >
+                <Text style={styles.tabBadgeText}>
+                  {toPersianDigits(exceptionsTotalCount)}
+                </Text>
+              </View>
             </View>
-            <Text
-              style={[
-                styles.mainTabText,
-                {
-                  color: mainTab === 'exceptions' ? '#EF4444' : colors.textMuted,
-                  fontFamily:
-                    mainTab === 'exceptions'
-                      ? Typography.fontFamily.bold
-                      : Typography.fontFamily.medium,
-                },
-              ]}
-            >
-              نیازمند بررسی و استثناها
-            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setMainTab('completed')}
+            activeOpacity={0.85}
             style={[
               styles.mainTabBtn,
               {
@@ -558,255 +625,82 @@ export default function TodayDriversScreen() {
               },
             ]}
           >
-            <View style={styles.tabBadgeRow}>
-              {stats.arrivedCount > 0 ? (
-                <View
-                  style={[
-                    styles.tabBadge,
-                    { backgroundColor: '#10B981' },
-                  ]}
-                >
-                  <Text style={styles.tabBadgeText}>
-                    {toPersianDigits(stats.arrivedCount)}
-                  </Text>
-                </View>
-              ) : null}
+            <View style={styles.tabInnerRow}>
               <CheckCircle2
-                size={16}
+                size={15}
                 color={mainTab === 'completed' ? '#10B981' : colors.textMuted}
               />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.mainTabText,
+                  {
+                    color: mainTab === 'completed' ? '#10B981' : colors.textMuted,
+                    fontFamily:
+                      mainTab === 'completed'
+                        ? Typography.fontFamily.bold
+                        : Typography.fontFamily.medium,
+                  },
+                ]}
+              >
+                تأیید و تکمیل‌شده
+              </Text>
+              <View
+                style={[
+                  styles.tabBadge,
+                  {
+                    backgroundColor:
+                      cleanCompletedCount > 0 ? '#10B981' : colors.border,
+                  },
+                ]}
+              >
+                <Text style={styles.tabBadgeText}>
+                  {toPersianDigits(cleanCompletedCount)}
+                </Text>
+              </View>
             </View>
-            <Text
-              style={[
-                styles.mainTabText,
-                {
-                  color: mainTab === 'completed' ? '#10B981' : colors.textMuted,
-                  fontFamily:
-                    mainTab === 'completed'
-                      ? Typography.fontFamily.bold
-                      : Typography.fontFamily.medium,
-                },
-              ]}
-            >
-              تکمیل و تأییدشده
-            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* 2. Sub-filters for Exceptions Tab */}
-        {mainTab === 'exceptions' && (
-          <View style={styles.subFiltersRow}>
-            <TouchableOpacity
-              onPress={() => setExceptionSubFilter('all')}
-              style={[
-                styles.subFilterChip,
-                {
-                  backgroundColor:
-                    exceptionSubFilter === 'all'
-                      ? colors.commandBg
-                      : 'transparent',
-                  borderColor:
-                    exceptionSubFilter === 'all'
-                      ? colors.command
-                      : colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.subFilterChipText,
-                  {
-                    color:
-                      exceptionSubFilter === 'all'
-                        ? colors.command
-                        : colors.textSecondary,
-                    fontFamily:
-                      exceptionSubFilter === 'all'
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                  },
-                ]}
-              >
-                همه ({toPersianDigits(exceptionsTotalCount)})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setExceptionSubFilter('not_arrived')}
-              style={[
-                styles.subFilterChip,
-                {
-                  backgroundColor:
-                    exceptionSubFilter === 'not_arrived'
-                      ? 'rgba(239, 68, 68, 0.14)'
-                      : 'transparent',
-                  borderColor:
-                    exceptionSubFilter === 'not_arrived'
-                      ? '#EF4444'
-                      : colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.subFilterChipText,
-                  {
-                    color:
-                      exceptionSubFilter === 'not_arrived'
-                        ? '#EF4444'
-                        : colors.textSecondary,
-                    fontFamily:
-                      exceptionSubFilter === 'not_arrived'
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                  },
-                ]}
-              >
-                نرسیده‌ها ({toPersianDigits(stats.notArrivedCount)})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setExceptionSubFilter('pending')}
-              style={[
-                styles.subFilterChip,
-                {
-                  backgroundColor:
-                    exceptionSubFilter === 'pending'
-                      ? colors.goldBg
-                      : 'transparent',
-                  borderColor:
-                    exceptionSubFilter === 'pending'
-                      ? colors.gold
-                      : colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.subFilterChipText,
-                  {
-                    color:
-                      exceptionSubFilter === 'pending'
-                        ? colors.gold
-                        : colors.textSecondary,
-                    fontFamily:
-                      exceptionSubFilter === 'pending'
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                  },
-                ]}
-              >
-                در انتظار ({toPersianDigits(stats.pendingCount)})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setExceptionSubFilter('langi')}
-              style={[
-                styles.subFilterChip,
-                {
-                  backgroundColor:
-                    exceptionSubFilter === 'langi'
-                      ? colors.langiBg
-                      : 'transparent',
-                  borderColor:
-                    exceptionSubFilter === 'langi'
-                      ? colors.langi
-                      : colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.subFilterChipText,
-                  {
-                    color:
-                      exceptionSubFilter === 'langi'
-                        ? colors.langi
-                        : colors.textSecondary,
-                    fontFamily:
-                      exceptionSubFilter === 'langi'
-                        ? Typography.fontFamily.bold
-                        : Typography.fontFamily.regular,
-                  },
-                ]}
-              >
-                لنگی ({toPersianDigits(stats.langiCount)})
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* 3. Bulk Approval Action Bar (Only on Exceptions Tab when pending drivers exist) */}
+        {/* 2. Compact 1-Click Bulk Approval Bar (Only on Exceptions Tab when pending drivers exist) */}
         {mainTab === 'exceptions' && eligiblePendingDrivers.length > 0 && (
           <View
             style={[
-              styles.bulkApprovalCard,
+              styles.bulkApprovalBar,
               {
                 backgroundColor: isDark ? '#081720' : '#F0FDFA',
                 borderColor: colors.command,
               },
             ]}
           >
-            <View style={styles.bulkTopRow}>
-              <Pressable
-                onPress={handleToggleSelectAll}
-                style={styles.bulkSelectAllRow}
-                hitSlop={6}
-              >
-                <Text
-                  style={[
-                    styles.bulkSelectAllText,
-                    {
-                      color: colors.textSecondary,
-                      fontFamily: Typography.fontFamily.medium,
-                    },
-                  ]}
-                >
-                  {allPendingSelected ? 'لغو انتخاب همه' : 'انتخاب همه حاضران'}
-                </Text>
-                {allPendingSelected ? (
-                  <CheckSquare size={18} color={colors.command} />
-                ) : (
-                  <Square size={18} color={colors.textMuted} />
-                )}
-              </Pressable>
-
-              <View style={styles.bulkTitleRow}>
-                <Text
-                  style={[
-                    styles.bulkTitleText,
-                    { color: colors.command, fontFamily: Typography.fontFamily.bold },
-                  ]}
-                >
-                  تأیید یک‌باره رانندگان حاضر (Bulk Approval)
-                </Text>
-                <CheckCheck size={18} color={colors.command} />
-              </View>
-            </View>
-
-            <Text
-              style={[
-                styles.bulkDescText,
-                {
-                  color: colors.textSecondary,
-                  fontFamily: Typography.fontFamily.regular,
-                },
-              ]}
+            <Pressable
+              onPress={handleToggleSelectAll}
+              style={styles.bulkSelectAllBtn}
+              hitSlop={6}
             >
-              {selectedIdsForBulk.size > 0
-                ? `${toPersianDigits(
-                    selectedIdsForBulk.size
-                  )} راننده به‌صورت انتخابی مشخص شده‌اند.`
-                : `با فشردن دکمه زیر، حضور تمام ${toPersianDigits(
-                    eligiblePendingDrivers.length
-                  )} راننده در انتظار در یک کلیک ثبت می‌شود.`}
-            </Text>
+              {allPendingSelected ? (
+                <CheckSquare size={18} color={colors.command} />
+              ) : (
+                <Square size={18} color={colors.textMuted} />
+              )}
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.bulkSelectAllText,
+                  {
+                    color: colors.text,
+                    fontFamily: Typography.fontFamily.medium,
+                  },
+                ]}
+              >
+                {allPendingSelected ? 'لغو انتخاب' : 'انتخاب همه'}
+              </Text>
+            </Pressable>
 
             <TouchableOpacity
               onPress={() => setBulkConfirmVisible(true)}
               disabled={isBulkLoading || targetBulkIds.length === 0}
+              activeOpacity={0.85}
               style={[
                 styles.bulkConfirmBtn,
                 {
@@ -820,15 +714,15 @@ export default function TodayDriversScreen() {
                 <ActivityIndicator size="small" color="#071318" />
               ) : (
                 <>
-                  <CheckCheck size={18} color="#071318" />
+                  <CheckCheck size={16} color="#071318" />
                   <Text
+                    numberOfLines={1}
                     style={[
                       styles.bulkConfirmBtnText,
                       { fontFamily: Typography.fontFamily.bold },
                     ]}
                   >
-                    تأیید دسته‌جمعی {toPersianDigits(targetBulkIds.length)} راننده
-                    حاضر
+                    تأیید یک‌باره حاضران ({toPersianDigits(targetBulkIds.length)} نفر)
                   </Text>
                 </>
               )}
@@ -836,7 +730,7 @@ export default function TodayDriversScreen() {
           </View>
         )}
 
-        {/* 4. Search Input Box */}
+        {/* 3. Search Input Box */}
         <View
           style={[
             styles.searchBox,
@@ -867,7 +761,7 @@ export default function TodayDriversScreen() {
           )}
         </View>
 
-        {/* 5. Section Header with Dynamic Count */}
+        {/* 4. Section Header with Dynamic Count */}
         <View style={styles.sectionHeader}>
           <Text
             style={[
@@ -891,8 +785,8 @@ export default function TodayDriversScreen() {
               ]}
             >
               {mainTab === 'exceptions'
-                ? 'فهرست رانندگان نیازمند بررسی و پیگیری'
-                : 'فهرست رانندگان تأییدشده و حاضر'}
+                ? 'رانندگان نیازمند بررسی (ابتدا غایب‌ها)'
+                : 'رانندگان تأیید و تکمیل‌شده'}
             </Text>
             <View
               style={[
@@ -906,7 +800,7 @@ export default function TodayDriversScreen() {
           </View>
         </View>
 
-        {/* 6. Drivers Cards List */}
+        {/* 5. Drivers Cards List */}
         <View style={styles.cardsList}>
           {loading ? (
             <View style={styles.loadingState}>
@@ -917,15 +811,17 @@ export default function TodayDriversScreen() {
                   { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                در حال دریافت فهرست واقعی رانندگان از سرور...
+                در حال دریافت فهرست رانندگان از بورد روزانه...
               </Text>
             </View>
           ) : mainTab === 'exceptions' ? (
             exceptionsDrivers.length > 0 ? (
               exceptionsDrivers.map((driverItem) => {
                 const isAbsentException =
-                  driverItem.arrivalStatus === 'not_arrived';
+                  driverItem.arrivalStatus === 'not_arrived' ||
+                  driverItem.executionStatus === 4;
                 const isPendingSelectable =
+                  !driverItem.isConfirmedBySupervisor &&
                   driverItem.arrivalStatus === 'pending';
                 const isSelected = selectedIdsForBulk.has(
                   driverItem.tripWorkCalendarId
@@ -955,14 +851,16 @@ export default function TodayDriversScreen() {
                   },
                 ]}
               >
-                <CheckCircle2 size={32} color="#10B981" />
+                <CheckCircle2 size={30} color="#10B981" />
                 <Text
                   style={[
                     styles.emptyStateTitle,
                     { color: colors.text, fontFamily: Typography.fontFamily.bold },
                   ]}
                 >
-                  عالی! موردی در این تب نیاز به بررسی ندارد
+                  {drivers.length === 0
+                    ? 'هیچ سرویسی در این محل خدمت ثبت نشده است'
+                    : 'تمام رانندگان این شیفت تعیین وضعیت شده‌اند'}
                 </Text>
                 <Text
                   style={[
@@ -970,8 +868,11 @@ export default function TodayDriversScreen() {
                     { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                   ]}
                 >
-                  تمام رانندگان این شیفت بررسی شده‌اند یا وضعیت حضور آن‌ها ثبت گردیده
-                  است.
+                  {drivers.length === 0
+                    ? dailyBoard
+                      ? `برای «${dailyBoard.companyServiceLocationTitle}» (${dailyBoard.directionTitle}) سرویسی در بورد روزانه وجود ندارد.`
+                      : 'می‌توانید محل خدمت یا جهت سرویس را از بالای صفحه تغییر دهید.'
+                    : 'رانندگان تأییدشده در تب «تأیید و تکمیل‌شده» قابل مشاهده هستند.'}
                 </Text>
               </View>
             )
@@ -997,14 +898,14 @@ export default function TodayDriversScreen() {
                 },
               ]}
             >
-              <Users size={30} color={colors.command} />
+              <Users size={28} color={colors.command} />
               <Text
                 style={[
                   styles.emptyStateTitle,
                   { color: colors.text, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                هنوز راننده‌ای در وضعیت تکمیل و تایید ثبت نشده است
+                هنوز راننده‌ای در وضعیت تأییدشده قرار ندارد
               </Text>
               <Text
                 style={[
@@ -1012,15 +913,14 @@ export default function TodayDriversScreen() {
                   { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
                 ]}
               >
-                می‌توانید از تب «نیازمند بررسی و استثناها»، حضور رانندگان حاضر را با
-                یک کلیک تأیید کنید.
+                از تب «نیازمند بررسی» می‌توانید حضور رانندگان را به‌صورت تکی یا یک‌باره ثبت کنید.
               </Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Modal 1: Individual Arrival / Absence Confirmation */}
+      {/* Modal 1: Individual Arrival / Absence Confirmation (with Delay Support) */}
       <ArrivalConfirmModal
         visible={confirmModalVisible}
         driverItem={selectedDriverForArrival}
@@ -1031,6 +931,9 @@ export default function TodayDriversScreen() {
 
       {/* Modal 2: Langi Request / Edit Sheet */}
       <LangiRequestModal
+        key={`${selectedDriverForLangi?.tripWorkCalendarId || 'general'}-${
+          langiModalVisible ? 'open' : 'closed'
+        }`}
         visible={langiModalVisible}
         preselectedDriver={selectedDriverForLangi}
         onClose={() => setLangiModalVisible(false)}
@@ -1070,7 +973,7 @@ export default function TodayDriversScreen() {
                   { color: colors.text, fontFamily: Typography.fontFamily.bold },
                 ]}
               >
-                تأیید دسته‌جمعی حضور رانندگان
+                تأیید یک‌باره حضور رانندگان
               </Text>
             </View>
 
@@ -1092,8 +995,7 @@ export default function TodayDriversScreen() {
               >
                 {toPersianDigits(targetBulkIds.length)} راننده
               </Text>{' '}
-              در سامانه گیتی‌سیر اطمینان دارید؟ اطلاعات حضور و موقعیت جغرافیایی برای
-              تمامی این رانندگان در سرور ثبت خواهد شد.
+              اطمینان دارید؟ پس از تأیید سرور، تمامی این موارد به تب «تأیید و تکمیل‌شده» منتقل می‌شوند.
             </Text>
 
             <View style={styles.modalActionsRow}>
@@ -1159,38 +1061,53 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
-    gap: 12,
+    paddingTop: Spacing.sm,
+    gap: 10,
   },
   dailyBoardFilterCard: {
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     padding: 12,
-    gap: 10,
+    gap: 9,
   },
-  dailyBoardHeaderRow: {
+  dailyBoardTitleBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
+  },
+  boardModeBadge: {
+    flexShrink: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  boardModeBadgeText: {
+    fontSize: 10.5,
   },
   boardTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'flex-end',
+    gap: 5,
   },
   boardTitleText: {
     fontSize: 13,
+    textAlign: 'right',
   },
   directionToggleGroup: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     gap: 6,
   },
   dirBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
   },
@@ -1221,39 +1138,24 @@ const styles = StyleSheet.create({
   },
   locIdInput: {
     flex: 1,
-    height: 36,
+    height: 34,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     paddingHorizontal: 10,
-    fontSize: 12.5,
+    fontSize: 12,
     textAlign: 'center',
   },
   applyLocBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    height: 36,
+    height: 34,
     paddingHorizontal: 12,
     borderRadius: BorderRadius.sm,
   },
   applyLocBtnText: {
-    fontSize: 11.5,
-    color: '#071318',
-  },
-  boardSummaryBar: {
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    padding: 8,
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  boardSummaryText: {
-    fontSize: 12,
-    textAlign: 'right',
-  },
-  boardCountsText: {
     fontSize: 11,
-    textAlign: 'right',
+    color: '#071318',
   },
   mainTabsContainer: {
     flexDirection: 'row-reverse',
@@ -1267,18 +1169,18 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
   },
-  tabBadgeRow: {
-    flexDirection: 'row',
+  tabInnerRow: {
+    flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 5,
+    justifyContent: 'center',
+    gap: 6,
   },
   tabBadge: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1.5,
     borderRadius: BorderRadius.full,
-    minWidth: 18,
+    minWidth: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1288,80 +1190,54 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.bold,
   },
   mainTabText: {
-    fontSize: 12.5,
+    fontSize: 12,
     textAlign: 'center',
   },
-  subFiltersRow: {
+  bulkApprovalBar: {
     flexDirection: 'row-reverse',
-    gap: 6,
-    justifyContent: 'flex-start',
-    flexWrap: 'wrap',
-  },
-  subFilterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-  },
-  subFilterChipText: {
-    fontSize: 11,
-  },
-  bulkApprovalCard: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1.5,
-    padding: 12,
-    gap: 8,
-  },
-  bulkTopRow: {
-    flexDirection: 'row-reverse',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 10,
   },
-  bulkTitleRow: {
+  bulkSelectAllBtn: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 6,
-  },
-  bulkTitleText: {
-    fontSize: 13,
-  },
-  bulkSelectAllRow: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 5,
+    paddingVertical: 4,
   },
   bulkSelectAllText: {
-    fontSize: 11.5,
-  },
-  bulkDescText: {
-    fontSize: 11.5,
-    textAlign: 'right',
-    lineHeight: 18,
+    fontSize: 12,
   },
   bulkConfirmBtn: {
+    flex: 1,
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    height: 40,
-    borderRadius: BorderRadius.md,
+    height: 38,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.sm,
   },
   bulkConfirmBtnText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#071318',
   },
   searchBox: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 8,
-    height: 44,
+    height: 42,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     paddingHorizontal: 12,
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12.5,
     textAlign: 'right',
     paddingVertical: 0,
   },
@@ -1380,11 +1256,11 @@ const styles = StyleSheet.create({
   },
   accentBar: {
     width: 3.5,
-    height: 17,
+    height: 16,
     borderRadius: 2,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 13.5,
   },
   cardsList: {
     gap: 10,
@@ -1401,7 +1277,7 @@ const styles = StyleSheet.create({
   emptyStateCard: {
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    padding: 22,
+    padding: 20,
     alignItems: 'center',
     gap: 8,
   },
@@ -1423,7 +1299,7 @@ const styles = StyleSheet.create({
   },
   bulkModalCard: {
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 400,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
     padding: 18,
@@ -1435,8 +1311,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   modalIconWrap: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: BorderRadius.full,
     justifyContent: 'center',
     alignItems: 'center',

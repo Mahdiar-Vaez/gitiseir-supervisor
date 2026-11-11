@@ -14,6 +14,15 @@ export const API_ENDPOINTS = {
     SUMMARY: (tripId: number | string) => `/api/driversMobile/Trip/${tripId}/summary`,
     START: (calendarDayId: string) => `/api/driversMobile/Trip/${calendarDayId}/start`,
     END: (calendarDayId: string) => `/api/driversMobile/Trip/${calendarDayId}/end`,
+    STATIONS: (tripId: number | string) => `/api/driversMobile/Trip/${tripId}/stations`,
+    VISIT_STATION: (tripId: number | string, tripStationId: number | string) =>
+      `/api/driversMobile/Trip/${tripId}/stations/${tripStationId}/visit`,
+    PERFORMANCE_SUMMARY: (driverId: number | string, year?: number, month?: number) => {
+      let url = `/api/driversMobile/Trip/performance-summary?driverId=${driverId}`;
+      if (year !== undefined) url += `&year=${year}`;
+      if (month !== undefined) url += `&month=${month}`;
+      return url;
+    },
   },
 
   WORK_CALENDAR: {
@@ -29,9 +38,16 @@ export const API_ENDPOINTS = {
   },
 
   SUPERVISOR: {
-    DAILY_BOARD: (companyServiceLocationId: number, entering: boolean) =>
-      `/api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId=${companyServiceLocationId}&entering=${entering}`,
+    DAILY_BOARD: (companyServiceLocationId: number, entering?: boolean) => {
+      let url = `/api/SupervisorsMobile/Trip/daily-board?companyServiceLocationId=${companyServiceLocationId}`;
+      if (entering !== undefined && entering !== null) {
+        url += `&entering=${entering}`;
+      }
+      return url;
+    },
     CONFIRM_ATTENDANCE: '/api/SupervisorsMobile/Trip/confirm-attendance',
+    MARK_ABSENT: '/api/SupervisorsMobile/Trip/mark-driver-absent',
+    TODAY_EXECUTION_SUMMARY: '/api/SupervisorsMobile/Trip/today-execution-summary',
     ASSIGN_TEMPORARY_DRIVER: '/api/SupervisorsMobile/Trip/assign-temporary-driver',
     SEARCH_SERVICE_LOCATIONS: '/api/administration/CompanyServiceLocations/search',
   },

@@ -1,18 +1,19 @@
 import { Platform } from 'react-native';
 import { ApiResponse } from './types';
 
-export const REMOTE_BACKEND_URL = 'https://backend.vaezprojects.ir';
+export const REMOTE_BACKEND_URL = 'http://95.38.176.36:8333';
+export const DOMAIN_BACKEND_URL = 'https://backend.vaezprojects.ir';
 
 /**
  * On Web in the browser, using a relative URL (empty base) routes API calls through
  * Vercel's reverse proxy (/api/ -> https://backend.vaezprojects.ir/api/), completely
  * bypassing browser Same-Origin CORS preflight failures.
- * On Native (iOS/Android) or when an explicit EXPO_PUBLIC_API_URL is provided, it uses the remote domain.
+ * On Native (iOS/Android) or when an explicit EXPO_PUBLIC_API_URL is provided, it uses the direct backend IP or remote domain.
  */
 export const API_BASE_URL =
   Platform.OS === 'web' && typeof window !== 'undefined'
-    ? (process.env.EXPO_PUBLIC_API_URL || '')
-    : (process.env.EXPO_PUBLIC_API_URL || REMOTE_BACKEND_URL);
+    ? ''
+    : (process.env.EXPO_PUBLIC_API_URL || DOMAIN_BACKEND_URL);
 
 export class ApiError extends Error {
   statusCode: number;
@@ -31,6 +32,42 @@ export class ApiError extends Error {
 interface RequestOptions extends RequestInit {
   timeoutMs?: number;
   token?: string | null;
+  retries?: number;
+}
+
+/**
+ * Translates low-level network and DNS errors into user-friendly Persian messages
+ */
+export function translateNetworkError(rawMessage: string): string {
+  const lower = (rawMessage || '').toLowerCase();
+
+  if (
+    lower.includes('unknownhostexception') ||
+    lower.includes('unable to resolve host') ||
+    lower.includes('enotfound') ||
+    lower.includes('eai_again')
+  ) {
+    return 'عدم شناسایی آدرس سرور. لطفاً وضعیت اینترنت، فیلترشکن یا تنظیمات دی‌ان‌اس را بررسی کنید.';
+  }
+
+  if (
+    lower.includes('aborterror') ||
+    lower.includes('timeout') ||
+    lower.includes('timed out')
+  ) {
+    return 'زمان انتظار برای پاسخ سرور به پایان رسید. لطفاً مجدداً تلاش نمایید.';
+  }
+
+  if (
+    lower.includes('network request failed') ||
+    lower.includes('failed to fetch') ||
+    lower.includes('econnrefused') ||
+    lower.includes('connection refused')
+  ) {
+    return 'عدم امکان اتصال به سرور. لطفاً اتصال اینترنت خود را بررسی کنید.';
+  }
+
+  return 'خطا در برقراری ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی کنید.';
 }
 
 /**
@@ -101,7 +138,7 @@ export async function apiClient<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<ApiResponse<T>> {
-  const { timeoutMs = 15000, token, ...customConfig } = options;
+  const { timeoutMs = 15000, token, retries = 1, ...customConfig } = options;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -197,6 +234,28 @@ export async function apiClient<T>(
         `=======================================================`
     );
 
+    if (retries > 0 && !(error instanceof ApiError)) {
+      const isDnsOrTimeout =
+        error.name === 'AbortError' ||
+        (typeof error?.message === 'string' &&
+          (error.message.includes('UnknownHostException') ||
+            error.message.includes('Unable to resolve host') ||
+            error.message.includes('fetch failed') ||
+            error.message.includes('Network request failed')));
+
+      const targetEndpoint =
+        isDnsOrTimeout && url.includes('vaezprojects.ir')
+          ? url.replace('https://backend.vaezprojects.ir', REMOTE_BACKEND_URL)
+          : endpoint;
+
+      console.log(`[API RETRY] تلاش مجدد برای اتصال (${retries} تلاش باقی‌مانده)...`);
+      await new Promise((res) => setTimeout(res, 300));
+      return apiClient<T>(targetEndpoint, {
+        ...options,
+        retries: retries - 1,
+      });
+    }
+
     if (error.name === 'AbortError') {
       throw new ApiError(
         'زمان انتظار برای پاسخ سرور به پایان رسید (Timeout).',
@@ -210,8 +269,9 @@ export async function apiClient<T>(
       throw error;
     }
 
+    const localizedMessage = translateNetworkError(error?.message);
     throw new ApiError(
-      error?.message || 'خطا در برقراری ارتباط با سرور. اتصال اینترنت را بررسی کنید.',
+      localizedMessage,
       500,
       null,
       endpoint

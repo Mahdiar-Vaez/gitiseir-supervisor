@@ -77,21 +77,92 @@ export interface JalaliDateInfo {
   day: number;
   monthName: string;
   weekdayName: string;
+  timeText: string;
   formattedText: string;
+  formattedWithTime: string;
   numericDate: string;
 }
 
-export function getCurrentJalaliDate(): JalaliDateInfo {
-  const now = new Date();
-  const [jy, jm, jd] = gregorianToJalali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+/**
+ * Extracts exact date and time components in Iran Standard Time (Asia/Tehran, UTC+03:30)
+ * regardless of the device, browser, or emulator's local timezone setting.
+ */
+export function getIranDateParts(date: Date = new Date()): {
+  gy: number;
+  gm: number;
+  gd: number;
+  jsDay: number;
+  hour: number;
+  minute: number;
+} {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tehran',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const map: Record<string, string> = {};
+    for (const p of parts) {
+      map[p.type] = p.value;
+    }
+    const gy = Number(map.year);
+    const gm = Number(map.month);
+    const gd = Number(map.day);
+    let hour = Number(map.hour);
+    if (hour === 24) hour = 0;
+    const minute = Number(map.minute);
 
-  const jsDay = now.getDay();
+    const weekdayMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
+    const jsDay = weekdayMap[map.weekday] ?? new Date(Date.UTC(gy, gm - 1, gd)).getUTCDay();
+
+    if (gy > 2000 && gm >= 1 && gm <= 12 && gd >= 1 && gd <= 31) {
+      return { gy, gm, gd, jsDay, hour, minute };
+    }
+  } catch {
+    // Fallback to deterministic UTC + 03:30 calculation below
+  }
+
+  // Fallback: Iran Standard Time is permanently UTC + 3 hours 30 minutes (210 minutes)
+  const iranEpochMs = date.getTime() + 210 * 60 * 1000;
+  const iranUtcDate = new Date(iranEpochMs);
+  return {
+    gy: iranUtcDate.getUTCFullYear(),
+    gm: iranUtcDate.getUTCMonth() + 1,
+    gd: iranUtcDate.getUTCDate(),
+    jsDay: iranUtcDate.getUTCDay(),
+    hour: iranUtcDate.getUTCHours(),
+    minute: iranUtcDate.getUTCMinutes(),
+  };
+}
+
+export function getCurrentJalaliDate(date: Date = new Date()): JalaliDateInfo {
+  const { gy, gm, gd, jsDay, hour, minute } = getIranDateParts(date);
+  const [jy, jm, jd] = gregorianToJalali(gy, gm, gd);
+
   const persianDayIndex = (jsDay + 1) % 7;
   const weekdayName = PERSIAN_WEEKDAYS[persianDayIndex];
   const monthName = JALALI_MONTH_NAMES[jm - 1];
 
   const padMonth = String(jm).padStart(2, '0');
   const padDay = String(jd).padStart(2, '0');
+  const hh = String(hour).padStart(2, '0');
+  const mm = String(minute).padStart(2, '0');
+  const timeText = toPersianDigits(`${hh}:${mm}`);
+  const formattedText = `${weekdayName} ${toPersianDigits(jd)} ${monthName} ${toPersianDigits(jy)}`;
 
   return {
     year: jy,
@@ -99,16 +170,41 @@ export function getCurrentJalaliDate(): JalaliDateInfo {
     day: jd,
     monthName,
     weekdayName,
-    formattedText: `${weekdayName} ${toPersianDigits(jd)} ${monthName} ${toPersianDigits(jy)}`,
+    timeText,
+    formattedText,
+    formattedWithTime: `${formattedText} • ساعت ${timeText}`,
     numericDate: toPersianDigits(`${jy}/${padMonth}/${padDay}`),
   };
 }
 
-export function getCurrentPersianTime(): string {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
+export function getCurrentPersianTime(date: Date = new Date()): string {
+  const { hour, minute } = getIranDateParts(date);
+  const hh = String(hour).padStart(2, '0');
+  const mm = String(minute).padStart(2, '0');
   return toPersianDigits(`${hh}:${mm}`);
+}
+
+/**
+ * Converts a UTC ISO string (even if missing trailing 'Z') to exact Iran local time (HH:mm)
+ */
+export function formatUtcToIranTime(utcStr?: string | null): string {
+  if (!utcStr) return '';
+  try {
+    const trimmed = utcStr.trim();
+    const hasTz = /([zZ]|[+-]\d{2}:?\d{2})$/.test(trimmed);
+    const normalizedIso = hasTz ? trimmed : `${trimmed}Z`;
+    const d = new Date(normalizedIso);
+    if (!Number.isNaN(d.getTime())) {
+      const { hour, minute } = getIranDateParts(d);
+      const hh = String(hour).padStart(2, '0');
+      const mm = String(minute).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+  } catch {
+    // ignore
+  }
+  const match = utcStr.match(/T(\d{2}:\d{2})/);
+  return match ? match[1] : '';
 }
 
 export function getDaysInJalaliMonth(year: number, month: number): number {

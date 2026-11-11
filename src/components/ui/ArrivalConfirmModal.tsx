@@ -10,17 +10,17 @@ import {
   Switch,
 } from 'react-native';
 import { triggerNotificationHaptic } from '@/utils/haptics';
+import { DelayMinutesSelector } from './attendance/DelayMinutesSelector';
 import {
   CheckCircle2,
   XCircle,
-  Navigation,
   X,
   Repeat,
+  Clock,
 } from 'lucide-react-native';
 import { useAppTheme } from '@/context/ThemeContext';
 import { Typography, BorderRadius } from '@/constants/theme';
 import { TodayDriverItem, ArrivalStatus } from '@/services/api/types';
-import { getCurrentCoordinates, Coordinates } from '@/services/location/gps';
 import { toPersianDigits } from '@/utils/persian-digits';
 
 interface ArrivalConfirmModalProps {
@@ -32,7 +32,9 @@ interface ArrivalConfirmModalProps {
     tripWorkCalendarId: string,
     status: ArrivalStatus,
     note: string,
-    openLangiAfter: boolean
+    openLangiAfter: boolean,
+    isDelayed?: boolean,
+    delayMinutes?: number
   ) => Promise<void>;
 }
 
@@ -59,9 +61,9 @@ export function ArrivalConfirmModal({
   const { colors, isDark } = useAppTheme();
   const [note, setNote] = useState<string>('');
   const [openLangiAfter, setOpenLangiAfter] = useState<boolean>(false);
+  const [isDelayed, setIsDelayed] = useState<boolean>(false);
+  const [delayMinutes, setDelayMinutes] = useState<number>(10);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [previewCoords, setPreviewCoords] = useState<Coordinates | null>(null);
-  const [fetchingGps, setFetchingGps] = useState<boolean>(false);
 
   const isArrived = targetStatus === 'arrived';
   const presets = isArrived ? ARRIVED_PRESET_NOTES : ABSENT_PRESET_NOTES;
@@ -70,24 +72,26 @@ export function ArrivalConfirmModal({
     if (driverItem) {
       setNote(presets[0]);
       setOpenLangiAfter(!isArrived && !driverItem.hasLangi);
-      setFetchingGps(true);
-      getCurrentCoordinates()
-        .then((coords) => setPreviewCoords(coords))
-        .finally(() => setFetchingGps(false));
+      setIsDelayed(false);
+      setDelayMinutes(10);
     }
   };
 
   if (!driverItem) return null;
 
+  const isInvalidDelay = isArrived && isDelayed && delayMinutes <= 0;
+
   const handleConfirmPress = async () => {
-    if (submitting) return;
+    if (submitting || isInvalidDelay) return;
     setSubmitting(true);
     try {
       await onConfirm(
         driverItem.tripWorkCalendarId,
         targetStatus,
         note.trim(),
-        openLangiAfter
+        openLangiAfter,
+        isArrived ? isDelayed : false,
+        isArrived && isDelayed ? delayMinutes : undefined
       );
       await triggerNotificationHaptic(isArrived ? 'success' : 'warning');
     } finally {
@@ -157,59 +161,6 @@ export function ArrivalConfirmModal({
             </Pressable>
           </View>
 
-          {/* Live GPS Location Box */}
-          <View
-            style={[
-              styles.gpsBox,
-              {
-                backgroundColor: isDark ? '#071318' : '#F0FDFA',
-                borderColor: colors.commandBorder,
-              },
-            ]}
-          >
-            <View style={styles.gpsBoxRow}>
-              <Navigation size={15} color={colors.command} />
-              <Text
-                style={[
-                  styles.gpsBoxTitle,
-                  { color: colors.command, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                ارسال لوکیشن لحظه‌ای سرشوفر همراه با تایید
-              </Text>
-            </View>
-
-            {fetchingGps ? (
-              <View style={styles.gpsLoadingRow}>
-                <ActivityIndicator size="small" color={colors.command} />
-                <Text
-                  style={[
-                    styles.gpsCoordsValue,
-                    {
-                      color: colors.textSecondary,
-                      fontFamily: Typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  در حال دریافت دقیق‌ترین مختصات GPS دستگاه...
-                </Text>
-              </View>
-            ) : (
-              <Text
-                selectable
-                style={[
-                  styles.gpsCoordsValue,
-                  { color: colors.text, fontFamily: Typography.fontFamily.bold },
-                ]}
-              >
-                📍 عرض جغرافیایی:{' '}
-                {toPersianDigits((previewCoords?.latitude ?? 35.7219).toFixed(5))} | طول
-                جغرافیایی:{' '}
-                {toPersianDigits((previewCoords?.longitude ?? 51.3347).toFixed(5))}
-              </Text>
-            )}
-          </View>
-
           {/* Quick Reason / Note Presets */}
           <View style={styles.section}>
             <Text
@@ -275,6 +226,82 @@ export function ArrivalConfirmModal({
             />
           </View>
 
+          {/* Delay Selection for Arrived Driver */}
+          {isArrived && (
+            <View style={styles.delayContainer}>
+              <Pressable
+                onPress={() => {
+                  const next = !isDelayed;
+                  setIsDelayed(next);
+                  if (next && delayMinutes <= 0) {
+                    setDelayMinutes(10);
+                  }
+                }}
+                disabled={submitting}
+                style={[
+                  styles.delayToggleBox,
+                  {
+                    backgroundColor: isDelayed
+                      ? isDark
+                        ? 'rgba(245, 158, 11, 0.15)'
+                        : '#FEF3C7'
+                      : isDark
+                      ? '#071318'
+                      : '#F8FAFC',
+                    borderColor: isDelayed ? '#F59E0B' : colors.border,
+                  },
+                ]}
+              >
+                <View style={styles.delayToggleRight}>
+                  <Clock size={16} color={isDelayed ? '#F59E0B' : colors.textSecondary} />
+                  <Text
+                    style={[
+                      styles.delayToggleText,
+                      {
+                        color: isDelayed ? '#F59E0B' : colors.text,
+                        fontFamily: isDelayed
+                          ? Typography.fontFamily.bold
+                          : Typography.fontFamily.medium,
+                      },
+                    ]}
+                  >
+                    ثبت تأخیر برای ورود راننده
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.toggleIndicator,
+                    {
+                      backgroundColor: isDelayed ? '#F59E0B' : colors.card,
+                      borderColor: isDelayed ? '#F59E0B' : colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleIndicatorText,
+                      {
+                        color: isDelayed ? '#FFFFFF' : colors.textMuted,
+                        fontFamily: Typography.fontFamily.bold,
+                      },
+                    ]}
+                  >
+                    {isDelayed ? 'دارد' : 'ندارد'}
+                  </Text>
+                </View>
+              </Pressable>
+
+              {isDelayed && (
+                <View style={{ marginTop: 8 }}>
+                  <DelayMinutesSelector
+                    delayMinutes={delayMinutes}
+                    onChangeMinutes={setDelayMinutes}
+                  />
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Smart Langi Follow-up Toggle when driver did NOT arrive */}
           {!isArrived && (
             <View
@@ -324,12 +351,12 @@ export function ArrivalConfirmModal({
           <View style={styles.footerBtns}>
             <Pressable
               onPress={handleConfirmPress}
-              disabled={submitting}
+              disabled={submitting || isInvalidDelay}
               style={({ pressed }) => [
                 styles.confirmBtn,
                 {
                   backgroundColor: accentColor,
-                  opacity: pressed || submitting ? 0.8 : 1,
+                  opacity: pressed || submitting || isInvalidDelay ? 0.65 : 1,
                 },
               ]}
             >
@@ -340,10 +367,11 @@ export function ArrivalConfirmModal({
                 />
               ) : (
                 <>
-                  <Navigation
-                    size={16}
-                    color={isArrived ? '#071318' : '#FFFFFF'}
-                  />
+                  {isArrived ? (
+                    <CheckCircle2 size={16} color="#071318" />
+                  ) : (
+                    <XCircle size={16} color="#FFFFFF" />
+                  )}
                   <Text
                     style={[
                       styles.confirmBtnText,
@@ -354,10 +382,12 @@ export function ArrivalConfirmModal({
                     ]}
                   >
                     {isArrived
-                      ? 'ثبت قطعی رسیدن + ارسال لوکیشن'
+                      ? isDelayed && delayMinutes > 0
+                        ? `ثبت تأیید حضور (با ${toPersianDigits(delayMinutes)} دقیقه تأخیر)`
+                        : 'ثبت قطعی تأیید حضور راننده'
                       : openLangiAfter
-                      ? 'ثبت نرسیدن + باز کردن فرم لنگی'
-                      : 'ثبت قطعی نرسیدن + ارسال لوکیشن'}
+                      ? 'ثبت عدم حضور + باز کردن فرم لنگی'
+                      : 'ثبت قطعی عدم حضور راننده'}
                   </Text>
                 </>
               )}
@@ -488,6 +518,35 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 13,
     textAlign: 'right',
+  },
+  delayContainer: {
+    gap: 6,
+  },
+  delayToggleBox: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  delayToggleRight: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+  },
+  delayToggleText: {
+    fontSize: 13,
+  },
+  toggleIndicator: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  toggleIndicatorText: {
+    fontSize: 11,
   },
   langiFollowupBox: {
     flexDirection: 'row-reverse',

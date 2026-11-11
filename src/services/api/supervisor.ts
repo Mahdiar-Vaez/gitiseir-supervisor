@@ -6,6 +6,8 @@ import {
   SupervisorDailyBoardResult,
   ConfirmAttendanceRequest,
   AssignTemporaryDriverRequest,
+  MarkDriverAbsentRequest,
+  TodayExecutionSummaryResult,
 } from './types';
 
 export async function getServiceLocationsApi(
@@ -42,7 +44,7 @@ export async function getServiceLocationsApi(
 
 export async function getSupervisorDailyBoardApi(
   companyServiceLocationId: number,
-  entering: boolean,
+  entering?: boolean,
   token?: string | null
 ): Promise<ApiResponse<SupervisorDailyBoardResult>> {
   const endpoint = API_ENDPOINTS.SUPERVISOR.DAILY_BOARD(
@@ -59,20 +61,66 @@ export async function confirmAttendanceApi(
   payload: ConfirmAttendanceRequest,
   token?: string | null
 ): Promise<ApiResponse<any>> {
+  const hasValidDelay =
+    Boolean(payload.isDelayed) && Number(payload.delayMinutes) > 0;
+
+  const requestBody: Record<string, any> = {
+    calendarDayId: payload.calendarDayId,
+    note: payload.note || '',
+  };
+
+  if (hasValidDelay) {
+    requestBody.isDelayed = true;
+    requestBody.delayMinutes = Math.round(Number(payload.delayMinutes));
+  }
+
   return await apiClient<any>(API_ENDPOINTS.SUPERVISOR.CONFIRM_ATTENDANCE, {
+    method: 'POST',
+    body: JSON.stringify(requestBody),
+    token,
+  });
+}
+
+/**
+ * Mark Driver as Absent by Supervisor (100% real backend data)
+ * Endpoint: POST /api/SupervisorsMobile/Trip/mark-driver-absent
+ */
+export async function markDriverAbsentApi(
+  payload: MarkDriverAbsentRequest,
+  token?: string | null
+): Promise<ApiResponse<any>> {
+  return await apiClient<any>(API_ENDPOINTS.SUPERVISOR.MARK_ABSENT, {
     method: 'POST',
     body: JSON.stringify({
       calendarDayId: payload.calendarDayId,
-      note: payload.note || '',
+      reason: payload.reason.trim(),
     }),
     token,
   });
+}
+
+/**
+ * Fetch Today's Shift Execution Live Monitoring Summary
+ * Endpoint: GET /api/SupervisorsMobile/Trip/today-execution-summary
+ */
+export async function getTodayExecutionSummaryApi(
+  token?: string | null
+): Promise<ApiResponse<TodayExecutionSummaryResult>> {
+  return await apiClient<TodayExecutionSummaryResult>(
+    API_ENDPOINTS.SUPERVISOR.TODAY_EXECUTION_SUMMARY,
+    {
+      method: 'GET',
+      token,
+    }
+  );
 }
 
 export async function assignTemporaryDriverApi(
   payload: AssignTemporaryDriverRequest,
   token?: string | null
 ): Promise<ApiResponse<any>> {
+  const cleanCard = payload.cardNumber.trim();
+  const cleanAccount = (payload.cardAccountNumber ?? payload.cardNumber ?? '').trim();
   return await apiClient<any>(API_ENDPOINTS.SUPERVISOR.ASSIGN_TEMPORARY_DRIVER, {
     method: 'POST',
     body: JSON.stringify({
@@ -81,7 +129,8 @@ export async function assignTemporaryDriverApi(
       family: payload.family.trim(),
       phoneNumber: payload.phoneNumber.trim(),
       nationalCode: payload.nationalCode.trim(),
-      cardNumber: payload.cardNumber.trim(),
+      cardNumber: cleanCard,
+      cardAccountNumber: cleanAccount,
       reason: payload.reason.trim(),
       price: Number(payload.price) || 0,
     }),

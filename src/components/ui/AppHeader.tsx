@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -19,7 +19,14 @@ export function AppHeader({ supervisorName }: AppHeaderProps) {
   const { user } = useAuth();
   const { stats } = useSarshoofer();
   const insets = useSafeAreaInsets();
-  const today = getCurrentJalaliDate();
+  const [today, setToday] = useState(() => getCurrentJalaliDate());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setToday(getCurrentJalaliDate());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   const userFullName = user
     ? `${user.name || ''} ${user.family || ''}`.trim()
@@ -95,7 +102,7 @@ export function AppHeader({ supervisorName }: AppHeaderProps) {
               { color: colors.textMuted, fontFamily: Typography.fontFamily.regular },
             ]}
           >
-            {today.formattedText}
+            {today.formattedWithTime}
           </Text>
         </View>
       </View>
